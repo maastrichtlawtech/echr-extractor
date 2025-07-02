@@ -1,0 +1,107 @@
+[build-system]
+requires = ["setuptools>=45", "wheel", "setuptools_scm[toml]>=6.2"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "echr-extractor"
+version = "1.0.44"
+description = "Python library for extracting case law data from the European Court of Human Rights (ECHR) HUDOC database"
+readme = "README.md"
+license = {text = "Apache-2.0"}
+authors = [
+    {name = "LawTech Lab", email = "lawtech@maastrichtuniversity.nl"},
+]
+classifiers = [
+    "Development Status :: 4 - Beta",
+    "Intended Audience :: Developers",
+    "Intended Audience :: Legal Industry", 
+    "Intended Audience :: Science/Research",
+    "License :: OSI Approved :: Apache Software License",
+    "Operating System :: OS Independent",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.8",
+    "Programming Language :: Python :: 3.9",
+    "Programming Language :: Python :: 3.10",
+    "Programming Language :: Python :: 3.11",
+    "Topic :: Scientific/Engineering :: Information Analysis",
+    "Topic :: Software Development :: Libraries :: Python Modules",
+    "Topic :: Text Processing :: Markup :: HTML",
+]
+keywords = [
+    "echr", "extractor", "european", "convention", "human", "rights",
+    "court", "case-law", "legal", "hudoc", "data-extraction"
+]
+requires-python = ">=3.8"
+dependencies = [
+    "requests>=2.26.0",
+    "pandas>=1.3.0",
+    "beautifulsoup4>=4.9.3",
+    "dateparser>=1.0.0",
+    "tqdm>=4.60.0",
+]
+
+[project.optional-dependencies]
+dev = [
+    "pytest>=6.0",
+    "pytest-cov>=2.10",
+    "black>=21.0.0",
+    "isort>=5.0.0",
+    "flake8>=3.8.0",
+    "mypy>=0.910",
+]
+docs = [
+    "sphinx>=4.0.0",
+    "sphinx-rtd-theme>=0.5.0",
+]
+
+[project.urls]
+Homepage = "https://github.com/maastrichtlawtech/echr-extractor"
+Repository = "https://github.com/maastrichtlawtech/echr-extractor"
+"Bug Reports" = "https://github.com/maastrichtlawtech/echr-extractor/issues"
+Documentation = "https://github.com/maastrichtlawtech/echr-extractor"
+
+[project.scripts]
+echr-extractor = "echr_extractor.cli:main"
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.setuptools.package-dir]
+"" = "src"
+
+[tool.black]
+line-length = 88
+target-version = ['py38']
+include = '\.pyi?$'
+extend-exclude = '''
+/(
+  # directories
+  \.eggs
+  | \.git
+  | \.hg
+  | \.mypy_cache
+  | \.tox
+  | \.venv
+  | build
+  | dist
+)/
+'''
+
+[tool.isort]
+profile = "black"
+multi_line_output = 3
+line_length = 88
+known_first_party = ["echr_extractor"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+python_files = ["test_*.py"]
+python_classes = ["Test*"]
+python_functions = ["test_*"]
+addopts = "-v --cov=src/echr_extractor --cov-report=term-missing --cov-report=xml"
+
+[tool.mypy]
+python_version = "3.8"
+warn_return_any = true
+warn_unused_configs = true
+disallow_untyped_defs = true
