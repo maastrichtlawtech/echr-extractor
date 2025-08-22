@@ -14,7 +14,11 @@ class TestECHRExtractor:
         """Test basic ECHR metadata extraction."""
         # Mock the metadata harvester to return sample data
         sample_df = pd.DataFrame(
-            {"itemid": ["001-123456"], "title": ["Test Case"], "kpdate": ["2023-01-01"]}
+            {
+                "itemid": ["001-123456"],
+                "title": ["Test Case"],
+                "kpdate": ["2023-01-01"]
+            }
         )
         mock_get_metadata.return_value = sample_df
 

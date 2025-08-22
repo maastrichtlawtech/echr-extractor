@@ -5,7 +5,6 @@ import pandas as pd
 
 from echr_extractor import get_echr, get_echr_extra, get_nodes_edges
 
-
 class TestGetECHR:
     """Test the get_echr function."""
 
@@ -16,7 +15,10 @@ class TestGetECHR:
         sample_df = pd.DataFrame({
             "itemid": ["001-123456", "001-123457"],
             "title": ["Test Case 1", "Test Case 2"],
-            "kpdate": ["2023-01-01", "2023-01-02"]
+            "kpdate": [
+                "2023-01-01",
+                "2023-01-02"
+            ]
         })
         mock_get_metadata.return_value = sample_df
 
