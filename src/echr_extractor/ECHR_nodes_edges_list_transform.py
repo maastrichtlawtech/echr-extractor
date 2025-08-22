@@ -144,7 +144,7 @@ def remove_cases_based_on_year(case, year_from_ref):
             continue
         try:
             date = dateparser.parse(i.judgementdate)
-        except:
+        except Exception:
             date = False
         if date:
             year_from_case = date.year

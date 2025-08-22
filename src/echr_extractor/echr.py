@@ -40,7 +40,7 @@ def get_echr(
         language = ["ENG"]
     if count:
         end_id = int(start_id) + count
-    logging.info(f"--- STARTING ECHR DOWNLOAD FOR  ---")
+        logging.info("--- STARTING ECHR DOWNLOAD FOR  ---")
     df = get_echr_metadata(
         start_id=start_id,
         end_id=end_id,

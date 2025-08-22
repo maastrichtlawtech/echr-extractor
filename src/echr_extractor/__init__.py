@@ -13,6 +13,6 @@ logging.basicConfig(level=logging.INFO)
 
 __all__ = [
     "get_echr",
-    "get_echr_extra", 
+    "get_echr_extra",
     "get_nodes_edges",
 ]
