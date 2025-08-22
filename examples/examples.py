@@ -11,7 +11,7 @@ def main():
     # Example 1: Basic metadata extraction
     print("1. Extracting basic metadata for 5 cases...")
     try:
-        df = get_echr(count=5, save_file="n", verbose=True)
+        df = get_echr(count=5, save_file="y", verbose=True)
         print(f"   Successfully extracted {len(df)} cases")
         print(f"   Columns: {list(df.columns)}")
         if len(df) > 0:
