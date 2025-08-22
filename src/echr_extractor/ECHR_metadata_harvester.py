@@ -1,8 +1,9 @@
+
 import logging
 from datetime import datetime
-
 import pandas as pd
 import requests
+import json
 
 
 def get_r(url, timeout, retry, verbose):
@@ -70,26 +71,40 @@ def link_to_query(link):
             + ")".replace("\\", "")
         )
         full_text_input = full_text_input.replace("\\", "")
-        b = 2
-        # removing first and last " elements and saving the output to
-        # put manually later
+    # removing first and last " elements and saving the output to
+    # put manually later
     if fulltext_end:
 
         if link[fulltext_end + 1] == ",":
-            to_replace = link[fulltext_start - 1 : fulltext_end + 2]
+            to_replace = link[fulltext_start - 1:fulltext_end + 2]
         else:
-            to_replace = link[fulltext_start - 1 : fulltext_end + 1]
+            to_replace = link[fulltext_start - 1:fulltext_end + 1]
         link = link.replace(to_replace, "")
 
     extra_cases_map = {
-        "bodyprocedure": '("PROCEDURE" ONEAR(n=1000) terms OR "PROCÉDURE" ONEAR(n=1000) terms)',
-        "bodyfacts": '("THE FACTS" ONEAR(n=1000) terms OR "EN FAIT" ONEAR(n=1000) terms)',
-        "bodycomplaints": '("COMPLAINTS" ONEAR(n=1000) terms OR "GRIEFS" ONEAR(n=1000) terms)',
-        "bodylaw": '("THE LAW" ONEAR(n=1000) terms OR "EN DROIT" ONEAR(n=1000) terms)',
-        "bodyreasons": '("FOR THESE REASONS" ONEAR(n=1000) terms OR "PAR CES MOTIFS" ONEAR(n=1000) terms)',
-        "bodyseparateopinions": '(("SEPARATE OPINION" OR "SEPARATE OPINIONS") ONEAR(n=5000) terms OR "OPINION '
-        'SÉPARÉE" ONEAR(n=5000) terms)',
-        "bodyappendix": '("APPENDIX" ONEAR(n=1000) terms OR "ANNEXE" ONEAR(n=1000) terms)',
+        "bodyprocedure": (
+            '("PROCEDURE" ONEAR(n=1000) terms OR "PROCÉDURE" ONEAR(n=1000) terms)'
+        ),
+        "bodyfacts": (
+            '("THE FACTS" ONEAR(n=1000) terms OR "EN FAIT" ONEAR(n=1000) terms)'
+        ),
+        "bodycomplaints": (
+            '("COMPLAINTS" ONEAR(n=1000) terms OR "GRIEFS" ONEAR(n=1000) terms)'
+        ),
+        "bodylaw": (
+            '("THE LAW" ONEAR(n=1000) terms OR "EN DROIT" ONEAR(n=1000) terms)'
+        ),
+        "bodyreasons": (
+            '("FOR THESE REASONS" ONEAR(n=1000) terms OR '
+            '"PAR CES MOTIFS" ONEAR(n=1000) terms)'
+        ),
+        "bodyseparateopinions": (
+            '(("SEPARATE OPINION" OR "SEPARATE OPINIONS") ONEAR(n=5000) terms OR '
+            '"OPINION SÉPARÉE" ONEAR(n=5000) terms)'
+        ),
+        "bodyappendix": (
+            '("APPENDIX" ONEAR(n=1000) terms OR "ANNEXE" ONEAR(n=1000) terms)'
+        ),
     }
 
     def full_text_function(term, values):
@@ -103,14 +118,14 @@ def link_to_query(link):
         if first == '""':
             first = '"1900-01-01"'
         if second == '""':
-            second = datetime.today().date()
+            second = str(datetime.today().date())
         query = query.replace("first_term", first)
         query = query.replace("second_term", second)
         return query
 
     def advanced_function(term, values):
         body = extra_cases_map.get(term)
-        query = body.replace("terms", ",".join(vals))
+        query = body.replace("terms", ",".join(values))
         return query
 
     query_map = {
@@ -141,15 +156,14 @@ def link_to_query(link):
 
     start = link.index("{")
     end = link.rindex("}")
-    json_str = link[start : end + 1].replace("'", '"')
+    json_str = link[start:end + 1].replace("'", '"')
 
     try:
         link_dictionary = json.loads(json_str)
     except json.JSONDecodeError:
-
         print(f"Failed to parse JSON: {json_str}")
         link_dictionary = {}
-        pairs = json_str.strip("{}").split(",")
+        pairs = json_str.strip("{}") .split(",")
         for pair in pairs:
             key, value = pair.split(":", 1)
             key = key.strip().strip('"')
@@ -159,7 +173,8 @@ def link_to_query(link):
     base_query = (
         "https://hudoc.echr.coe.int/app/query/results?query=contentsitename:ECHR"
         " AND (NOT (doctype=PR OR doctype=HFCOMOLD OR doctype=HECOMOLD)) AND "
-        "inPutter&select={select}&sort=itemid%20Ascending&start={start}&length={length}"
+        "inPutter&select={select}&sort=itemid%20Ascending&start={start}"
+        "&length={length}"
     )
     query_elements = list()
     if full_text_input:
@@ -320,7 +335,8 @@ def get_echr_metadata(
         ]
 
     META_URL = determine_meta_url(link, query_payload, start_date, end_date)
-    # An example url: "https://hudoc.echr.coe.int/app/query/results?query=(contentsitename=ECHR)%20AND%20(documentcollectionid2:%22JUDGMENTS%22%20OR%20documentcollectionid2:%22COMMUNICATEDCASES%22%20OR%20documentcollectionid2:%22DECISIONS%22%20OR%20documentcollectionid2:%22CLIN%22)&select=itemid,applicability,application,appno,article,conclusion,decisiondate,docname,documentcollectionid,%20documentcollectionid2,doctype,doctypebranch,ecli,externalsources,extractedappno,importance,introductiondate,%20isplaceholder,issue,judgementdate,kpdate,kpdateAsText,kpthesaurus,languageisocode,meetingnumber,%20originatingbody,publishedby,Rank,referencedate,reportdate,representedby,resolutiondate,%20resolutionnumber,respondent,respondentOrderEng,rulesofcourt,separateopinion,scl,sharepointid,typedescription,%20nonviolation,violation&sort=itemid%20Ascending&start=0&length=200"
+    # Example HUDOC query URL (truncated for lint compliance):
+    # "https://hudoc.echr.coe.int/app/query/results?query=(contentsitename=ECHR) ..."
 
     META_URL = META_URL.replace(" ", "%20")
     META_URL = META_URL.replace('"', "%22")
@@ -341,26 +357,29 @@ def get_echr_metadata(
     if not end_id:
         end_id = resultcount
     if verbose:
-        logging.info(
-            f"Fetching {end_id - start_id} results from index {start_id} to index {end_id} "
-            + f'{f" and filtering cases after {start_date}" if start_date and not link and not query_payload else ""} {f"and filtering cases before {end_date}" if end_date and not link and not query_payload else "."}'
+        msg = (
+            f"Fetching {end_id - start_id} results from index {start_id} "
+            f"to index {start_id}"
         )
+        if start_date and not link and not query_payload:
+            msg += f" and filtering cases after {start_date}"
+        if end_date and not link and not query_payload:
+            msg += f" and filtering cases before {end_date}"
+        logging.info(msg)
 
     timeout = 60
     retry = 3
-    if (
-        start_id + end_id > 500
-    ):  # HUDOC does not let you fetch more than 500 items in one go.
+    # HUDOC does not let you fetch more than 500 items in one go.
+    if (start_id + end_id > 500):
         for i in range(start_id, end_id, 500):
             if verbose:
                 logging.info(
-                    " - Fetching information from cases {} to {}.".format(i, i + 500)
+                    f" - Fetching information from cases {i} to {i + 500}."
                 )
             # Format URL based on the incremented index.
             url = META_URL.format(start=i, length=500)
             if verbose:
                 logging.info(url)
-
             # Get the response.
             r = get_r(url, timeout, retry, verbose)
             if r is not None:
