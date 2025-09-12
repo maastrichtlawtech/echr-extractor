@@ -8,18 +8,17 @@ from .ECHR_metadata_harvester import get_echr_metadata
 from .ECHR_nodes_edges_list_transform import echr_nodes_edges
 
 """
-I have replaced the function definition to take all arguments n eede to call
-read_echr_metadata and I have also
-replaced the file naming lines. The old code is commented out I didn't delete
-anything. :)
-On top of this the lines which deal with defining default values have been
-commented out because this is
-handled in read_echr_metadata. It can also be done here but then it should be
-removed from the other method.
-It will probably be necissary to add some file handling to prevent overwriting.
-I'm not sure if you have plans for this
-already but feel free to shoot me a message about it seeing as I did something
-similar for the ECHR branch. @Benjamin
+Enhanced ECHR data extraction with improved batching, error handling, and memory management.
+
+Key improvements:
+- Date range batching for large datasets to prevent timeouts
+- Enhanced error handling with exponential backoff
+- Progress tracking with tqdm progress bars
+- Memory-efficient processing for large datasets
+- Configurable batch sizes and retry parameters
+- Better logging and status reporting
+
+The original functionality is preserved for backward compatibility.
 """
 
 
@@ -35,12 +34,73 @@ def get_echr(
     link=None,
     language=None,
     query_payload=None,
+    # New configuration parameters
+    batch_size=500,
+    timeout=60,
+    retry_attempts=3,
+    max_attempts=20,
+    days_per_batch=365,
+    progress_bar=True,
+    memory_efficient=True,
 ):
+    """
+    Enhanced ECHR metadata extraction with improved reliability and performance.
+    
+    This function provides a high-level interface for extracting ECHR metadata with
+    advanced features like date batching, progress tracking, and memory management.
+    
+    :param int start_id: The index to start the search from (default: 0).
+    :param int end_id: The index to end search at, where None fetches all results.
+    :param str start_date: The point from which to save cases (YYYY-MM-DD format).
+    :param int count: Number of records to fetch (alternative to end_id).
+    :param str end_date: The point before which to save cases (YYYY-MM-DD format).
+    :param bool verbose: Whether or not to print extra information (default: False).
+    :param str save_file: Whether to save results to file ("y" or "n", default: "y").
+    :param list fields: List of fields to extract (default: None, uses all fields).
+    :param str link: Custom HUDOC link for advanced queries.
+    :param list language: List of language codes (default: ["ENG"]).
+    :param str query_payload: Custom query payload for advanced searches.
+    :param int batch_size: Number of records to fetch per batch, max 500 (default: 500).
+    :param float timeout: Request timeout in seconds (default: 60).
+    :param int retry_attempts: Number of retry attempts for failed requests (default: 3).
+    :param int max_attempts: Maximum total attempts before giving up (default: 20).
+    :param int days_per_batch: Number of days per date batch for large date ranges (default: 365).
+    :param bool progress_bar: Whether to show progress bar (default: True).
+    :param bool memory_efficient: Whether to use memory-efficient processing (default: True).
+    
+    :return: pandas.DataFrame containing the extracted metadata, or False if extraction failed.
+    
+    Example:
+        # Basic usage (backward compatible)
+        df = get_echr(start_id=0, end_id=1000, verbose=True)
+        
+        # Advanced usage with date batching
+        df = get_echr(
+            start_date='2020-01-01',
+            end_date='2023-12-31',
+            batch_size=250,
+            days_per_batch=180,
+            progress_bar=True
+        )
+        
+        # Memory-efficient processing for large datasets
+        df = get_echr(
+            start_id=0,
+            end_id=50000,
+            memory_efficient=True,
+            batch_size=200
+        )
+    """
     if language is None:
         language = ["ENG"]
     if count:
         end_id = int(start_id) + count
-        logging.info("--- STARTING ECHR DOWNLOAD FOR  ---")
+        if verbose:
+            logging.info(f"--- STARTING ECHR DOWNLOAD FOR {count} RECORDS ---")
+    else:
+        if verbose:
+            logging.info("--- STARTING ECHR DOWNLOAD ---")
+
     df = get_echr_metadata(
         start_id=start_id,
         end_id=end_id,
@@ -51,6 +111,13 @@ def get_echr(
         link=link,
         language=language,
         query_payload=query_payload,
+        batch_size=batch_size,
+        timeout=timeout,
+        retry_attempts=retry_attempts,
+        max_attempts=max_attempts,
+        days_per_batch=days_per_batch,
+        progress_bar=progress_bar,
+        memory_efficient=memory_efficient,
     )
     if df is False:
         return False
@@ -105,7 +172,44 @@ def get_echr_extra(
     link=None,
     language=None,
     query_payload=None,
+    # New configuration parameters
+    batch_size=500,
+    timeout=60,
+    retry_attempts=3,
+    max_attempts=20,
+    days_per_batch=365,
+    progress_bar=True,
+    memory_efficient=True,
 ):
+    """
+    Enhanced ECHR metadata and full-text extraction with improved reliability and performance.
+    
+    This function extracts both metadata and full-text content from ECHR cases with
+    advanced features like date batching, progress tracking, and memory management.
+    
+    :param int start_id: The index to start the search from (default: 0).
+    :param int end_id: The index to end search at, where None fetches all results.
+    :param str start_date: The point from which to save cases (YYYY-MM-DD format).
+    :param int count: Number of records to fetch (alternative to end_id).
+    :param str end_date: The point before which to save cases (YYYY-MM-DD format).
+    :param bool verbose: Whether or not to print extra information (default: False).
+    :param str save_file: Whether to save results to file ("y" or "n", default: "y").
+    :param int threads: Number of threads for full-text download (default: 10).
+    :param list fields: List of fields to extract (default: None, uses all fields).
+    :param str link: Custom HUDOC link for advanced queries.
+    :param list language: List of language codes (default: ["ENG"]).
+    :param str query_payload: Custom query payload for advanced searches.
+    :param int batch_size: Number of records to fetch per batch, max 500 (default: 500).
+    :param float timeout: Request timeout in seconds (default: 60).
+    :param int retry_attempts: Number of retry attempts for failed requests (default: 3).
+    :param int max_attempts: Maximum total attempts before giving up (default: 20).
+    :param int days_per_batch: Number of days per date batch for large date ranges (default: 365).
+    :param bool progress_bar: Whether to show progress bar (default: True).
+    :param bool memory_efficient: Whether to use memory-efficient processing (default: True).
+    
+    :return: tuple of (pandas.DataFrame, list) containing metadata and full-text data, 
+             or (False, False) if extraction failed.
+    """
     df = get_echr(
         start_id=start_id,
         end_id=end_id,
@@ -118,6 +222,13 @@ def get_echr_extra(
         link=link,
         language=language,
         query_payload=query_payload,
+        batch_size=batch_size,
+        timeout=timeout,
+        retry_attempts=retry_attempts,
+        max_attempts=max_attempts,
+        days_per_batch=days_per_batch,
+        progress_bar=progress_bar,
+        memory_efficient=memory_efficient,
     )
     logging.info("Full-text download will now begin")
     if df is False:
