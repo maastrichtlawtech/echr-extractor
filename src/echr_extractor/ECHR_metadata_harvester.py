@@ -1,4 +1,3 @@
-
 import logging
 from datetime import datetime, timedelta
 import pandas as pd
@@ -12,7 +11,7 @@ from tqdm import tqdm
 def get_r(url, timeout, retry, verbose, max_attempts=20):
     """
     Enhanced get data from a URL with improved error handling and retry logic.
-    
+
     :param str url: The data source URL.
     :param float timeout: The amount of time to wait for a response each attempt.
     :param int retry: The number of times to retry upon failure.
@@ -22,41 +21,49 @@ def get_r(url, timeout, retry, verbose, max_attempts=20):
     """
     count = 0
     last_exception = None
-    
+
     while count < max_attempts:
         try:
             r = requests.get(url, timeout=timeout)
             r.raise_for_status()  # Raise an exception for bad status codes
             return r
-        except (requests.exceptions.ReadTimeout, 
-                requests.exceptions.ConnectTimeout,
-                requests.exceptions.ConnectionError,
-                requests.exceptions.HTTPError) as e:
+        except (
+            requests.exceptions.ReadTimeout,
+            requests.exceptions.ConnectTimeout,
+            requests.exceptions.ConnectionError,
+            requests.exceptions.HTTPError,
+        ) as e:
             last_exception = e
             count += 1
             if verbose:
-                logging.warning(f"Request failed (attempt {count}/{max_attempts}): {type(e).__name__}: {str(e)}")
-            
+                logging.warning(
+                    f"Request failed (attempt {count}/{max_attempts}): {type(e).__name__}: {str(e)}"
+                )
+
             if count <= retry:
                 # Exponential backoff
-                wait_time = min(2 ** count, 30)  # Cap at 30 seconds
+                wait_time = min(2**count, 30)  # Cap at 30 seconds
                 if verbose:
                     logging.info(f"Retrying in {wait_time} seconds...")
                 time.sleep(wait_time)
             else:
                 if verbose:
-                    logging.error(f"Unable to connect to {url} after {count} attempts. Last error: {last_exception}")
+                    logging.error(
+                        f"Unable to connect to {url} after {count} attempts. Last error: {last_exception}"
+                    )
                 return None
-    
+
     if verbose:
-        logging.error(f"Max attempts ({max_attempts}) exceeded for {url}. Last error: {last_exception}")
+        logging.error(
+            f"Max attempts ({max_attempts}) exceeded for {url}. Last error: {last_exception}"
+        )
     return None
 
 
 def get_date_ranges(start_date, end_date, days_per_batch=365):
     """
     Split a date range into smaller batches to prevent timeouts and memory issues.
-    
+
     :param str start_date: Start date in YYYY-MM-DD format
     :param str end_date: End date in YYYY-MM-DD format
     :param int days_per_batch: Number of days per batch
@@ -64,21 +71,20 @@ def get_date_ranges(start_date, end_date, days_per_batch=365):
     """
     if not start_date or not end_date:
         return [(start_date, end_date)]
-    
-    start_dt = datetime.strptime(start_date, '%Y-%m-%d')
-    end_dt = datetime.strptime(end_date, '%Y-%m-%d')
-    
+
+    start_dt = datetime.strptime(start_date, "%Y-%m-%d")
+    end_dt = datetime.strptime(end_date, "%Y-%m-%d")
+
     date_ranges = []
     current_start = start_dt
-    
+
     while current_start < end_dt:
         current_end = min(current_start + timedelta(days=days_per_batch - 1), end_dt)
-        date_ranges.append((
-            current_start.strftime('%Y-%m-%d'), 
-            current_end.strftime('%Y-%m-%d')
-        ))
+        date_ranges.append(
+            (current_start.strftime("%Y-%m-%d"), current_end.strftime("%Y-%m-%d"))
+        )
         current_start = current_end + timedelta(days=1)
-    
+
     return date_ranges
 
 
@@ -122,9 +128,9 @@ def link_to_query(link):
     if fulltext_end:
 
         if link[fulltext_end + 1] == ",":
-            to_replace = link[fulltext_start - 1:fulltext_end + 2]
+            to_replace = link[fulltext_start - 1 : fulltext_end + 2]
         else:
-            to_replace = link[fulltext_start - 1:fulltext_end + 1]
+            to_replace = link[fulltext_start - 1 : fulltext_end + 1]
         link = link.replace(to_replace, "")
 
     extra_cases_map = {
@@ -202,14 +208,14 @@ def link_to_query(link):
 
     start = link.index("{")
     end = link.rindex("}")
-    json_str = link[start:end + 1].replace("'", '"')
+    json_str = link[start : end + 1].replace("'", '"')
 
     try:
         link_dictionary = json.loads(json_str)
     except json.JSONDecodeError:
         print(f"Failed to parse JSON: {json_str}")
         link_dictionary = {}
-        pairs = json_str.strip("{}") .split(",")
+        pairs = json_str.strip("{}").split(",")
         for pair in pairs:
             key, value = pair.split(":", 1)
             key = key.strip().strip('"')
@@ -307,7 +313,7 @@ def get_echr_metadata(
 ):
     """
     Enhanced ECHR metadata extraction with improved batching, error handling, and memory management.
-    
+
     :param int start_id: The index to start the search from.
     :param int end_id: The index to end search at, where the default fetches all results.
     :param bool verbose: Whether or not to print extra information.
@@ -329,31 +335,86 @@ def get_echr_metadata(
     # Set default fields if not provided
     if not fields:
         fields = [
-            "itemid", "applicability", "appno", "article", "conclusion", "docname",
-            "doctype", "doctypebranch", "ecli", "importance", "judgementdate",
-            "languageisocode", "originatingbody", "violation", "nonviolation",
-            "extractedappno", "scl", "publishedby", "representedby", "respondent",
-            "separateopinion", "sharepointid", "externalsources", "issue",
-            "referencedate", "rulesofcourt", "DocId", "WorkId", "Rank", "Author",
-            "Size", "Path", "Description", "Write", "CollapsingStatus",
-            "HighlightedSummary", "HighlightedProperties", "contentclass",
-            "PictureThumbnailURL", "ServerRedirectedURL", "ServerRedirectedEmbedURL",
-            "ServerRedirectedPreviewURL", "FileExtension", "ContentTypeId",
-            "ParentLink", "ViewsLifeTime", "ViewsRecent", "SectionNames",
-            "SectionIndexes", "SiteLogo", "SiteDescription", "deeplinks",
-            "SiteName", "IsDocument", "LastModifiedTime", "FileType", "IsContainer",
-            "WebTemplate", "SecondaryFileExtension", "docaclmeta", "OriginalPath",
-            "EditorOWSUSER", "DisplayAuthor", "ResultTypeIdList", "PartitionId",
-            "UrlZone", "AAMEnabledManagedProperties", "ResultTypeId", "rendertemplateid"
+            "itemid",
+            "applicability",
+            "appno",
+            "article",
+            "conclusion",
+            "docname",
+            "doctype",
+            "doctypebranch",
+            "ecli",
+            "importance",
+            "judgementdate",
+            "languageisocode",
+            "originatingbody",
+            "violation",
+            "nonviolation",
+            "extractedappno",
+            "scl",
+            "publishedby",
+            "representedby",
+            "respondent",
+            "separateopinion",
+            "sharepointid",
+            "externalsources",
+            "issue",
+            "referencedate",
+            "rulesofcourt",
+            "DocId",
+            "WorkId",
+            "Rank",
+            "Author",
+            "Size",
+            "Path",
+            "Description",
+            "Write",
+            "CollapsingStatus",
+            "HighlightedSummary",
+            "HighlightedProperties",
+            "contentclass",
+            "PictureThumbnailURL",
+            "ServerRedirectedURL",
+            "ServerRedirectedEmbedURL",
+            "ServerRedirectedPreviewURL",
+            "FileExtension",
+            "ContentTypeId",
+            "ParentLink",
+            "ViewsLifeTime",
+            "ViewsRecent",
+            "SectionNames",
+            "SectionIndexes",
+            "SiteLogo",
+            "SiteDescription",
+            "deeplinks",
+            "SiteName",
+            "IsDocument",
+            "LastModifiedTime",
+            "FileType",
+            "IsContainer",
+            "WebTemplate",
+            "SecondaryFileExtension",
+            "docaclmeta",
+            "OriginalPath",
+            "EditorOWSUSER",
+            "DisplayAuthor",
+            "ResultTypeIdList",
+            "PartitionId",
+            "UrlZone",
+            "AAMEnabledManagedProperties",
+            "ResultTypeId",
+            "rendertemplateid",
         ]
 
     # Determine if we need date batching
     use_date_batching = start_date and end_date and not link and not query_payload
-    
+
     if use_date_batching:
         date_ranges = get_date_ranges(start_date, end_date, days_per_batch)
         if verbose:
-            logging.info(f"Date range split into {len(date_ranges)} batches of {days_per_batch} days each")
+            logging.info(
+                f"Date range split into {len(date_ranges)} batches of {days_per_batch} days each"
+            )
     else:
         date_ranges = [(start_date, end_date)]
 
@@ -363,11 +424,15 @@ def get_echr_metadata(
 
     for batch_idx, (batch_start_date, batch_end_date) in enumerate(date_ranges):
         if verbose:
-            logging.info(f"Processing date batch {batch_idx + 1}/{len(date_ranges)}: {batch_start_date} to {batch_end_date}")
+            logging.info(
+                f"Processing date batch {batch_idx + 1}/{len(date_ranges)}: {batch_start_date} to {batch_end_date}"
+            )
 
         # Determine meta URL for this batch
-        META_URL = determine_meta_url(link, query_payload, batch_start_date, batch_end_date)
-        
+        META_URL = determine_meta_url(
+            link, query_payload, batch_start_date, batch_end_date
+        )
+
         # URL encoding
         META_URL = META_URL.replace(" ", "%20")
         META_URL = META_URL.replace('"', "%22")
@@ -384,13 +449,13 @@ def get_echr_metadata(
         url = META_URL.format(start=0, length=1)
         if verbose:
             logging.info(f"Checking result count: {url}")
-        
+
         r = get_r(url, timeout, retry_attempts, verbose, max_attempts)
         if r is None:
             logging.error(f"Failed to get result count for batch {batch_idx + 1}")
             total_failed += 1
             continue
-            
+
         try:
             resultcount = r.json()["resultcount"]
             if verbose:
@@ -426,29 +491,29 @@ def get_echr_metadata(
                 total=batch_end_id - batch_start_id,
                 desc=f"Batch {batch_idx + 1}/{len(date_ranges)}",
                 unit="records",
-                leave=False
+                leave=False,
             )
 
         # Process in batches of batch_size
         for i in range(batch_start_id, batch_end_id, batch_size):
             current_batch_size = min(batch_size, batch_end_id - i)
-            
+
             if verbose and not progress_bar:
                 logging.info(f"Fetching records {i} to {i + current_batch_size}")
 
             url = META_URL.format(start=i, length=current_batch_size)
             r = get_r(url, timeout, retry_attempts, verbose, max_attempts)
-            
+
             if r is not None:
                 try:
                     temp_dict = r.json()["results"]
                     for result in temp_dict:
                         batch_data.append(result["columns"])
                     batch_processed += len(temp_dict)
-                    
+
                     if progress_bar and (batch_end_id - batch_start_id) > batch_size:
                         pbar.update(len(temp_dict))
-                        
+
                 except (KeyError, ValueError) as e:
                     logging.error(f"Failed to parse results: {e}")
                     batch_failed += 1
@@ -473,11 +538,15 @@ def get_echr_metadata(
         total_failed += batch_failed
 
         if verbose:
-            logging.info(f"Batch {batch_idx + 1} completed: {batch_processed} processed, {batch_failed} failed")
+            logging.info(
+                f"Batch {batch_idx + 1} completed: {batch_processed} processed, {batch_failed} failed"
+            )
 
     # Final summary
     if verbose:
-        logging.info(f"Total processing complete: {total_processed} records processed, {total_failed} batches failed")
+        logging.info(
+            f"Total processing complete: {total_processed} records processed, {total_failed} batches failed"
+        )
 
     if len(all_data) == 0:
         logging.warning("No data retrieved from any batch")
@@ -485,8 +554,10 @@ def get_echr_metadata(
 
     # Create DataFrame
     df = pd.DataFrame.from_records(all_data)
-    
+
     if verbose:
-        logging.info(f"Created DataFrame with {len(df)} records and {len(df.columns)} columns")
-    
+        logging.info(
+            f"Created DataFrame with {len(df)} records and {len(df.columns)} columns"
+        )
+
     return df

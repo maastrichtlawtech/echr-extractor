@@ -45,10 +45,10 @@ def get_echr(
 ):
     """
     Enhanced ECHR metadata extraction with improved reliability and performance.
-    
+
     This function provides a high-level interface for extracting ECHR metadata with
     advanced features like date batching, progress tracking, and memory management.
-    
+
     :param int start_id: The index to start the search from (default: 0).
     :param int end_id: The index to end search at, where None fetches all results.
     :param str start_date: The point from which to save cases (YYYY-MM-DD format).
@@ -67,13 +67,13 @@ def get_echr(
     :param int days_per_batch: Number of days per date batch for large date ranges (default: 365).
     :param bool progress_bar: Whether to show progress bar (default: True).
     :param bool memory_efficient: Whether to use memory-efficient processing (default: True).
-    
+
     :return: pandas.DataFrame containing the extracted metadata, or False if extraction failed.
-    
+
     Example:
         # Basic usage (backward compatible)
         df = get_echr(start_id=0, end_id=1000, verbose=True)
-        
+
         # Advanced usage with date batching
         df = get_echr(
             start_date='2020-01-01',
@@ -82,7 +82,7 @@ def get_echr(
             days_per_batch=180,
             progress_bar=True
         )
-        
+
         # Memory-efficient processing for large datasets
         df = get_echr(
             start_id=0,
@@ -183,10 +183,10 @@ def get_echr_extra(
 ):
     """
     Enhanced ECHR metadata and full-text extraction with improved reliability and performance.
-    
+
     This function extracts both metadata and full-text content from ECHR cases with
     advanced features like date batching, progress tracking, and memory management.
-    
+
     :param int start_id: The index to start the search from (default: 0).
     :param int end_id: The index to end search at, where None fetches all results.
     :param str start_date: The point from which to save cases (YYYY-MM-DD format).
@@ -206,8 +206,8 @@ def get_echr_extra(
     :param int days_per_batch: Number of days per date batch for large date ranges (default: 365).
     :param bool progress_bar: Whether to show progress bar (default: True).
     :param bool memory_efficient: Whether to use memory-efficient processing (default: True).
-    
-    :return: tuple of (pandas.DataFrame, list) containing metadata and full-text data, 
+
+    :return: tuple of (pandas.DataFrame, list) containing metadata and full-text data,
              or (False, False) if extraction failed.
     """
     df = get_echr(
@@ -254,17 +254,13 @@ def get_nodes_edges(metadata_path=None, df=None, save_file="y"):
     if save_file == "y":
         Path("data").mkdir(parents=True, exist_ok=True)
         edges.to_csv(
-            os.path.join("data", "ECHR_edges.csv"), index=False,
-            encoding="utf-8"
+            os.path.join("data", "ECHR_edges.csv"), index=False, encoding="utf-8"
         )
         nodes.to_csv(
-            os.path.join("data", "ECHR_nodes.csv"), index=False,
-            encoding="utf-8"
+            os.path.join("data", "ECHR_nodes.csv"), index=False, encoding="utf-8"
         )
-        nodes.to_json(os.path.join("data", "ECHR_nodes.json"),
-                      orient="records")
-        edges.to_json(os.path.join("data", "ECHR_edges.json"),
-                      orient="records")
+        nodes.to_json(os.path.join("data", "ECHR_nodes.json"), orient="records")
+        edges.to_json(os.path.join("data", "ECHR_edges.json"), orient="records")
         return nodes, edges
 
     return nodes, edges
