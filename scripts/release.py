@@ -64,6 +64,16 @@ def check_working_directory_clean():
         print("Error: Working directory is not clean. Please commit or stash changes.")
         print("Uncommitted changes:")
         print(result.stdout)
+        print("\nThis is required to ensure clean version numbers for PyPI releases.")
+        sys.exit(1)
+    
+    # Also check that we're on main branch
+    result = run_command("git branch --show-current")
+    current_branch = result.stdout.strip()
+    if current_branch != "main":
+        print(f"Error: You must be on the 'main' branch to create releases.")
+        print(f"Current branch: {current_branch}")
+        print("Please switch to main branch: git checkout main")
         sys.exit(1)
 
 

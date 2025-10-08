@@ -146,6 +146,12 @@ write_to = "src/echr_extractor/_version.py"  # Auto-generate version file
 - Check that setuptools_scm is installed: `pip install setuptools_scm`
 - Verify pyproject.toml configuration is correct
 
+### "Local versions not allowed" error on PyPI?
+- **Cause**: setuptools_scm was generating versions with local identifiers (e.g., `1.0.47+abc123`)
+- **Solution**: The configuration now uses `local_scheme = "no-local-version"` to prevent this
+- **Prevention**: Only build from clean, tagged commits (GitHub Actions now only runs on tags)
+- **Manual fix**: Ensure working directory is clean before creating tags
+
 ## 📚 Additional Resources
 
 - [setuptools_scm Documentation](https://github.com/pypa/setuptools_scm)

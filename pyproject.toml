@@ -108,3 +108,7 @@ disallow_untyped_defs = true
 
 [tool.setuptools_scm]
 write_to = "src/echr_extractor/_version.py"
+# Ensure clean versions for PyPI releases
+local_scheme = "no-local-version"
+# Use distance-based versioning for development
+fallback_version = "0.0.0"
