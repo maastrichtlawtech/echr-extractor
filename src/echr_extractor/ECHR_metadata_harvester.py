@@ -1,11 +1,12 @@
+import gc
+import json
 import logging
+import time
+import urllib.parse
 from datetime import datetime, timedelta
+
 import pandas as pd
 import requests
-import json
-import time
-import gc
-import urllib.parse
 from tqdm import tqdm
 
 
@@ -211,7 +212,7 @@ def link_to_query(link):
     start = link.index("{")
     end = link.rindex("}")
     json_str = link[start : end + 1].replace("'", '"')
-    
+
     # URL decode the JSON string before parsing
     decoded_json_str = urllib.parse.unquote(json_str)
 
@@ -263,7 +264,7 @@ def link_to_query(link):
 def determine_meta_url(link, query_payload, start_date, end_date):
     if query_payload:
         # URL encode the query_payload to avoid issues with special characters
-        encoded_payload = urllib.parse.quote(query_payload, safe='')
+        encoded_payload = urllib.parse.quote(query_payload, safe="")
         META_URL = (
             "http://hudoc.echr.coe.int/app/query/results"
             f"?query={encoded_payload}"

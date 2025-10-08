@@ -126,9 +126,7 @@ def retrieve_edges_list(df):
         eclis = set(eclis)
         eclis = [i for i in eclis if (i and i != item.ecli)]
         # add ecli to edges list
-        if (
-            len(eclis) == 0
-        ):  # This should not have to happen at every iteration,
+        if len(eclis) == 0:  # This should not have to happen at every iteration,
             # concat might be slow
             continue
         for target in eclis:
@@ -151,8 +149,7 @@ def remove_cases_based_on_year(case, year_from_ref):
             if year_from_case - year_from_ref == 0:
                 case = case[
                     case["judgementdate"].str.contains(
-                        str(year_from_ref), regex=False, flags=re.IGNORECASE,
-                        na=False
+                        str(year_from_ref), regex=False, flags=re.IGNORECASE, na=False
                     )
                 ]
     return case
@@ -238,8 +235,7 @@ def lookup_casename(ref, df):
 
     uptext = re.sub(r"\[.*", "", uptext)
     uptext = uptext.strip()
-    row = df[df["docname"].str.contains(uptext, regex=False,
-                                        flags=re.IGNORECASE)]
+    row = df[df["docname"].str.contains(uptext, regex=False, flags=re.IGNORECASE)]
 
     # if len(row) == 0:
     #     print("no cases matched: ", name)
@@ -287,7 +283,7 @@ def get_year_from_ref(ref):
 
     try:
         return date.year
-    except:
+    except AttributeError:
         return 0
 
 

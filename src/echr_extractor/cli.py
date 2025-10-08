@@ -12,12 +12,10 @@ def main() -> None:
         description="Extract case law data from ECHR HUDOC database"
     )
 
-    subparsers = parser.add_subparsers(dest="command",
-                                       help="Available commands")
+    subparsers = parser.add_subparsers(dest="command", help="Available commands")
 
     # Basic extraction command
-    extract_parser = subparsers.add_parser("extract",
-                                           help="Extract ECHR metadata")
+    extract_parser = subparsers.add_parser("extract", help="Extract ECHR metadata")
     add_common_args(extract_parser)
 
     # Full extraction command
@@ -40,8 +38,7 @@ def main() -> None:
         "--metadata-path", type=str, help="Path to metadata CSV file"
     )
     network_parser.add_argument(
-        "--no-save", action="store_true",
-        help="Don't save files, return objects only"
+        "--no-save", action="store_true", help="Don't save files, return objects only"
     )
 
     args = parser.parse_args()
@@ -82,8 +79,7 @@ def main() -> None:
 
         elif args.command == "network":
             nodes, edges = get_nodes_edges(
-                metadata_path=args.metadata_path,
-                save_file="n" if args.no_save else "y"
+                metadata_path=args.metadata_path, save_file="n" if args.no_save else "y"
             )
             print(f"Generated {len(nodes)} nodes and {len(edges)} edges")
 
@@ -100,8 +96,7 @@ def add_common_args(parser: argparse.ArgumentParser) -> None:
         default=0,
         help="ID of first case to download (default: 0)",
     )
-    parser.add_argument("--end-id", type=int,
-                        help="ID of last case to download")
+    parser.add_argument("--end-id", type=int, help="ID of last case to download")
     parser.add_argument(
         "--count", type=int, help="Number of cases per language to download"
     )
@@ -115,11 +110,9 @@ def add_common_args(parser: argparse.ArgumentParser) -> None:
         "--verbose", action="store_true", help="Show progress information"
     )
     parser.add_argument(
-        "--no-save", action="store_true",
-        help="Don't save files, return objects only"
+        "--no-save", action="store_true", help="Don't save files, return objects only"
     )
-    parser.add_argument("--fields", nargs="+",
-                        help="Limit metadata fields to download")
+    parser.add_argument("--fields", nargs="+", help="Limit metadata fields to download")
     parser.add_argument(
         "--language",
         nargs="+",
