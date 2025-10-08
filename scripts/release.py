@@ -41,7 +41,7 @@ def get_current_version():
 def increment_version(version, bump_type):
     """Increment version based on bump type."""
     parts = [int(x) for x in version.split(".")]
-    
+
     if bump_type == "major":
         parts[0] += 1
         parts[1] = 0
@@ -53,7 +53,7 @@ def increment_version(version, bump_type):
         parts[2] += 1
     else:
         raise ValueError(f"Invalid bump type: {bump_type}")
-    
+
     return ".".join(map(str, parts))
 
 
@@ -70,13 +70,13 @@ def check_working_directory_clean():
 def create_and_push_tag(version):
     """Create a Git tag and push it."""
     tag_name = f"v{version}"
-    
+
     print(f"Creating tag: {tag_name}")
     run_command(f"git tag -a {tag_name} -m 'Release {version}'")
-    
+
     print(f"Pushing tag: {tag_name}")
     run_command(f"git push origin {tag_name}")
-    
+
     print(f"✅ Successfully created and pushed tag {tag_name}")
     print(f"🚀 GitHub Actions will now build and release version {version}")
 
@@ -85,14 +85,14 @@ def main():
     parser = argparse.ArgumentParser(description="Create a new release")
     parser.add_argument(
         "version_or_bump",
-        help="Version bump type (major, minor, patch) or specific version (e.g., 1.2.3)"
+        help="Version bump type (major, minor, patch) or specific version (e.g., 1.2.3)",
     )
-    
+
     args = parser.parse_args()
-    
+
     # Check if working directory is clean
     check_working_directory_clean()
-    
+
     # Determine new version
     if args.version_or_bump in ["major", "minor", "patch"]:
         current_version = get_current_version()
@@ -102,13 +102,13 @@ def main():
     else:
         new_version = args.version_or_bump
         print(f"Setting version to: {new_version}")
-    
+
     # Confirm with user
     response = input(f"Create release {new_version}? [y/N]: ")
-    if response.lower() != 'y':
+    if response.lower() != "y":
         print("Release cancelled.")
         sys.exit(0)
-    
+
     # Create and push tag
     create_and_push_tag(new_version)
 
