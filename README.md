@@ -80,10 +80,10 @@ df = get_echr(link=url)
 
 ### Using Query Payloads
 
-For more robust searching, use query payloads from the browser's Network tab:
+For more robust searching, use simple field:value queries:
 
 ```python
-payload = '{"query":{"terms":{"articles":["8"]}}}'
+payload = 'article:8'
 df = get_echr(query_payload=payload)
 ```
 

@@ -253,9 +253,12 @@ def link_to_query(link):
 
 def determine_meta_url(link, query_payload, start_date, end_date):
     if query_payload:
+        # URL encode the query_payload to avoid issues with special characters
+        import urllib.parse
+        encoded_payload = urllib.parse.quote(query_payload, safe='')
         META_URL = (
             "http://hudoc.echr.coe.int/app/query/results"
-            f"?query={query_payload}"
+            f"?query={encoded_payload}"
             "&select={select}"
             + "&sort=itemid Ascending"
             + "&start={start}&length={length}"
