@@ -5,8 +5,7 @@ on:
     branches: [ main ]
   pull_request:
     branches: [ main ]
-env:
-  RELEASE_VERSION: 1.0.45
+
 
 jobs:
   lint:
@@ -134,12 +133,17 @@ jobs:
             ./dist/*.tar.gz
             ./dist/*.whl
 
+      - name: Get version from setuptools_scm
+        id: version
+        run: |
+          python -c "import setuptools_scm; print('version=' + setuptools_scm.get_version())" >> $GITHUB_OUTPUT
+
       - name: Create Github release
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           gh release create \
-          'echr-extractor-${{ env.RELEASE_VERSION }}' \
+          'echr-extractor-${{ steps.version.outputs.version }}' \
           --repo '${{ github.repository }}' \
           --target 'main' \
           --notes ""

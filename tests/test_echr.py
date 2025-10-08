@@ -1,9 +1,11 @@
 """Test the main ECHR extractor functions."""
 
 from unittest.mock import patch
+
 import pandas as pd
 
 from echr_extractor import get_echr, get_echr_extra, get_nodes_edges
+
 
 class TestGetECHR:
     """Test the get_echr function."""
@@ -12,14 +14,13 @@ class TestGetECHR:
     def test_get_echr_basic_functionality(self, mock_get_metadata):
         """Test basic ECHR metadata extraction."""
         # Setup mock data
-        sample_df = pd.DataFrame({
-            "itemid": ["001-123456", "001-123457"],
-            "title": ["Test Case 1", "Test Case 2"],
-            "kpdate": [
-                "2023-01-01",
-                "2023-01-02"
-            ]
-        })
+        sample_df = pd.DataFrame(
+            {
+                "itemid": ["001-123456", "001-123457"],
+                "title": ["Test Case 1", "Test Case 2"],
+                "kpdate": ["2023-01-01", "2023-01-02"],
+            }
+        )
         mock_get_metadata.return_value = sample_df
 
         # Call function
@@ -80,12 +81,16 @@ class TestGetECHRExtra:
     def test_get_echr_extra_basic(self, mock_get_metadata, mock_download_text):
         """Test ECHR metadata + full text extraction."""
         # Setup mocks
-        sample_df = pd.DataFrame({
-            "itemid": ["001-123456"],
-            "title": ["Test Case"],
-        })
+        sample_df = pd.DataFrame(
+            {
+                "itemid": ["001-123456"],
+                "title": ["Test Case"],
+            }
+        )
         mock_get_metadata.return_value = sample_df
-        mock_download_text.return_value = [{"itemid": "001-123456", "text": "Full text"}]
+        mock_download_text.return_value = [
+            {"itemid": "001-123456", "text": "Full text"}
+        ]
 
         # Call function
         df_result, text_result = get_echr_extra(count=1, save_file="n")
@@ -98,7 +103,9 @@ class TestGetECHRExtra:
 
     @patch("echr_extractor.echr.download_full_text_main")
     @patch("echr_extractor.echr.get_echr_metadata")
-    def test_get_echr_extra_metadata_failure(self, mock_get_metadata, mock_download_text):
+    def test_get_echr_extra_metadata_failure(
+        self, mock_get_metadata, mock_download_text
+    ):
         """Test handling when metadata extraction fails."""
         mock_get_metadata.return_value = False
 
@@ -153,7 +160,7 @@ class TestParameterValidation:
         """Test with invalid save_file parameter."""
         with patch("echr_extractor.echr.get_echr_metadata") as mock_get_metadata:
             mock_get_metadata.return_value = pd.DataFrame()
-            
+
             # Should work with valid parameters
             result = get_echr(save_file="n")
             assert isinstance(result, pd.DataFrame)
@@ -162,7 +169,7 @@ class TestParameterValidation:
         """Test handling of empty DataFrame results."""
         with patch("echr_extractor.echr.get_echr_metadata") as mock_get_metadata:
             mock_get_metadata.return_value = pd.DataFrame()
-            
+
             result = get_echr(save_file="n")
             assert isinstance(result, pd.DataFrame)
             assert len(result) == 0

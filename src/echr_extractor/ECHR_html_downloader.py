@@ -3,7 +3,7 @@ import threading
 import requests
 from bs4 import BeautifulSoup
 
-base_url = 'https://hudoc.echr.coe.int/app/conversion/docx/html/body?library=ECHR&id='
+base_url = "https://hudoc.echr.coe.int/app/conversion/docx/html/body?library=ECHR&id="
 
 
 def get_full_text_from_html(html_text):
@@ -19,14 +19,14 @@ def get_full_text_from_html(html_text):
     # break multi-headlines into a line each
     chunks = (phrase.strip() for line in lines for phrase in line.split("  "))
     # drop blank lines
-    text = '\n'.join(chunk for chunk in chunks if chunk)
+    text = "\n".join(chunk for chunk in chunks if chunk)
     text = text.replace(",", "_")
     return text
 
 
 def download_full_text_main(df, threads):
-    item_ids = df['itemid']
-    eclis = df['ecli']
+    item_ids = df["itemid"]
+    eclis = df["ecli"]
     length = item_ids.size
     if length > threads:
         at_once_threads = int(length / threads)
@@ -35,9 +35,11 @@ def download_full_text_main(df, threads):
     all_dict = list()
     threads = []
     for i in range(0, length, at_once_threads):
-        curr_ids = item_ids[i:(i + at_once_threads)]
-        curr_ecli = eclis[i:(i + at_once_threads)]
-        t = threading.Thread(target=download_full_text_separate, args=(curr_ids, curr_ecli, all_dict))
+        curr_ids = item_ids[i : (i + at_once_threads)]
+        curr_ecli = eclis[i : (i + at_once_threads)]
+        t = threading.Thread(
+            target=download_full_text_separate, args=(curr_ids, curr_ecli, all_dict)
+        )
         threads.append(t)
     for t in threads:
         t.start()
@@ -45,9 +47,9 @@ def download_full_text_main(df, threads):
         t.join()
 
     json_file = list()
-    for l in all_dict:
-        if len(l) > 0:
-            json_file.extend(l)
+    for item in all_dict:
+        if len(item) > 0:
+            json_file.extend(item)
     return json_file
 
 
@@ -65,9 +67,9 @@ def download_full_text_separate(item_ids, eclis, dict_list):
             try:
                 r = requests.get(base_url + item_id, timeout=1)
                 json_dict = {
-                    'item_id': item_id,
-                    'ecli': ecli,
-                    'full_text': get_full_text_from_html(r.text)
+                    "item_id": item_id,
+                    "ecli": ecli,
+                    "full_text": get_full_text_from_html(r.text),
                 }
                 full_list.append(json_dict)
             except Exception:

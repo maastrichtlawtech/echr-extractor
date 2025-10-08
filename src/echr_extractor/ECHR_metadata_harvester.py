@@ -1,10 +1,12 @@
+import gc
+import json
 import logging
+import time
+import urllib.parse
 from datetime import datetime, timedelta
+
 import pandas as pd
 import requests
-import json
-import time
-import gc
 from tqdm import tqdm
 
 
@@ -113,7 +115,7 @@ def link_to_query(link):
     full_text_input = ""
     fulltext_end = -1
     fulltext_start = link.find("fulltext")
-    if fulltext_start:
+    if fulltext_start != -1:  # Fixed: check for -1 instead of truthy value
         start = link[fulltext_start:].find("[") + fulltext_start + 1
         fulltext_end = link[fulltext_start:].find("]") + fulltext_start
         fragment_to_fix = link[start:fulltext_end]
@@ -125,7 +127,7 @@ def link_to_query(link):
         full_text_input = full_text_input.replace("\\", "")
     # removing first and last " elements and saving the output to
     # put manually later
-    if fulltext_end:
+    if fulltext_end != -1:  # Fixed: check for -1 instead of truthy value
 
         if link[fulltext_end + 1] == ",":
             to_replace = link[fulltext_start - 1 : fulltext_end + 2]
@@ -194,6 +196,7 @@ def link_to_query(link):
         "kpthesaurus": basic_function,
         "advopidentifier": basic_function,
         "documentcollectionid2": basic_function,
+        "itemid": basic_function,  # Added support for itemid
         "fulltext": full_text_function,
         "kpdate": date_function,
         "bodyprocedure": advanced_function,
@@ -210,12 +213,15 @@ def link_to_query(link):
     end = link.rindex("}")
     json_str = link[start : end + 1].replace("'", '"')
 
+    # URL decode the JSON string before parsing
+    decoded_json_str = urllib.parse.unquote(json_str)
+
     try:
-        link_dictionary = json.loads(json_str)
+        link_dictionary = json.loads(decoded_json_str)
     except json.JSONDecodeError:
-        print(f"Failed to parse JSON: {json_str}")
+        # Fallback parsing for malformed JSON
         link_dictionary = {}
-        pairs = json_str.strip("{}").split(",")
+        pairs = decoded_json_str.strip("{}").split(",")
         for pair in pairs:
             key, value = pair.split(":", 1)
             key = key.strip().strip('"')
@@ -242,7 +248,11 @@ def link_to_query(link):
         else:
             vals = link_dictionary.get(key)
             funct = query_map.get(key)
-            query_elements.append(funct(key, vals))
+            if funct is not None:
+                query_elements.append(funct(key, vals))
+            else:
+                # Handle unknown keys by using basic_function as fallback
+                query_elements.append(basic_function(key, vals))
     if date_addition:
         query_elements.append(date_addition)
     query_total = " AND ".join(query_elements)
@@ -253,9 +263,11 @@ def link_to_query(link):
 
 def determine_meta_url(link, query_payload, start_date, end_date):
     if query_payload:
+        # URL encode the query_payload to avoid issues with special characters
+        encoded_payload = urllib.parse.quote(query_payload, safe="")
         META_URL = (
             "http://hudoc.echr.coe.int/app/query/results"
-            f"?query={query_payload}"
+            f"?query={encoded_payload}"
             "&select={select}"
             + "&sort=itemid Ascending"
             + "&start={start}&length={length}"

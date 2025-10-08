@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "echr-extractor"
-version = "1.0.45"
+dynamic = ["version"]
 description = "Python library for extracting case law data from the European Court of Human Rights (ECHR) HUDOC database"
 readme = "README.md"
 license = {text = "Apache-2.0"}
@@ -105,3 +105,6 @@ python_version = "3.8"
 warn_return_any = true
 warn_unused_configs = true
 disallow_untyped_defs = true
+
+[tool.setuptools_scm]
+write_to = "src/echr_extractor/_version.py"
