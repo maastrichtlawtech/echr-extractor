@@ -65,9 +65,16 @@ The CI/CD pipeline automatically:
 
 ### Workflow Triggers
 
-- **Pull Requests**: Run tests and linting
-- **Main Branch Push**: Build and test (no release)
+- **Pull Requests**: Run tests, linting, and build verification
+- **Main Branch Push**: Run tests, linting, and build verification (no PyPI release)
 - **Tag Push**: Full release pipeline (build, test, upload to PyPI, create release)
+
+### CI/CD Behavior
+
+- **Development**: All jobs run on PRs and main branch pushes for testing
+- **Release**: Only tagged commits trigger PyPI publishing and GitHub releases
+- **Artifacts**: Build artifacts are only uploaded for tagged releases
+- **Version Display**: Shows the version that would be built for debugging
 
 ## 📦 Package Version Access
 
