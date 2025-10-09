@@ -4,7 +4,12 @@ import logging
 
 from .echr import get_echr, get_echr_extra, get_nodes_edges
 
-__version__ = "1.0.44"
+try:
+    from ._version import version as __version__
+except ImportError:
+    # Fallback for development without tags
+    __version__ = "0.0.0.dev0"
+
 __author__ = "LawTech Lab, Maastricht University"
 __email__ = "lawtech@maastrichtuniversity.nl"
 
