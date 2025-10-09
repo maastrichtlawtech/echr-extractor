@@ -105,10 +105,3 @@ python_version = "3.8"
 warn_return_any = true
 warn_unused_configs = true
 disallow_untyped_defs = true
-
-[tool.setuptools_scm]
-write_to = "src/echr_extractor/_version.py"
-# Ensure clean versions for PyPI releases
-local_scheme = "no-local-version"
-# Use distance-based versioning for development
-fallback_version = "0.0.0"
