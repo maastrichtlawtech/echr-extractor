@@ -19,6 +19,18 @@ The package now uses **setuptools_scm** for automatic version management based o
 - **Development**: `v1.0.45` + uncommitted changes → Version: `1.0.46.dev0+gfc123e3.d20251008`
 - **Pre-release**: `v1.0.45` + 2 commits → Version: `1.0.46.dev2+gfc123e3`
 
+### Initial Setup
+
+When first adopting automated versioning, you need to create a baseline tag:
+
+```bash
+# Create a tag for the last released version
+git tag v1.0.46 <commit-sha>
+git push origin v1.0.46
+```
+
+This establishes a version baseline for setuptools_scm to calculate subsequent versions from.
+
 ## 📋 Release Process
 
 ### Option 1: Using the Release Script (Recommended)
@@ -139,6 +151,15 @@ write_to = "src/echr_extractor/_version.py"  # Auto-generate version file
 4. **Changelog**: Consider maintaining a CHANGELOG.md for release notes
 
 ## 🐛 Troubleshooting
+
+### Development version showing?
+- **This is expected behavior** for PR builds and commits that are not tagged
+- `.dev` suffix indicates a development version between releases
+- To get a clean version without `.dev`:
+  1. Merge the PR to main
+  2. Create and push a release tag: `git tag v1.0.47 && git push origin v1.0.47`
+  3. The tag push will trigger a build with version `1.0.47` (no `.dev`)
+- **Important**: Build artifacts are only uploaded for tagged releases (see CI/CD workflow)
 
 ### Version not updating?
 - Ensure you're on the main branch
