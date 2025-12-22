@@ -81,11 +81,13 @@ def main() -> None:
             print(f"Extracted {len(df)} cases with full text")
 
         elif args.command == "network":
-            nodes, edges = get_nodes_edges(
+            nodes, edges, missing_df = get_nodes_edges(
                 metadata_path=args.metadata_path,
                 save_file="n" if args.no_save else "y"
             )
             print(f"Generated {len(nodes)} nodes and {len(edges)} edges")
+            if missing_df is not None and len(missing_df) > 0:
+                print(f"Found {len(missing_df)} missing references")
 
     except Exception as e:
         print(f"Error: {e}", file=sys.stderr)
