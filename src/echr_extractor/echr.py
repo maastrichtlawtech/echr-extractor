@@ -263,9 +263,9 @@ def get_nodes_edges(metadata_path=None, df=None, save_file="y"):
         edges.to_json(os.path.join("data", "ECHR_edges.json"), orient="records")
         if missing_df is not None and len(missing_df) > 0:
             missing_df.to_csv(
-                os.path.join("data", "ECHR_missing_references.csv"), 
-                index=False, 
-                encoding="utf-8"
+                os.path.join("data", "ECHR_missing_references.csv"),
+                index=False,
+                encoding="utf-8",
             )
         return nodes, edges, missing_df
 
