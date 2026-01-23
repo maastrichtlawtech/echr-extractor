@@ -148,7 +148,9 @@ class TestGetNodesEdges:
         mock_nodes_edges.return_value = (mock_nodes, mock_edges, mock_missing)
 
         # Call function
-        nodes, edges, missing_df = get_nodes_edges(metadata_path="test.csv", save_file="n")
+        nodes, edges, missing_df = get_nodes_edges(
+            metadata_path="test.csv", save_file="n"
+        )
 
         # Assertions
         assert isinstance(nodes, pd.DataFrame)
