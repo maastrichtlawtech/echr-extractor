@@ -2,7 +2,6 @@ import logging
 import re
 
 import dateparser
-import numpy as np
 import pandas as pd
 from tqdm import tqdm
 
@@ -62,32 +61,32 @@ def retrieve_edges_list(df, df_unfiltered):
     df_unfiltered -- the complete dataframe from the metadata
     """
     logging.info("Pre-indexing data for fast lookups...")
-    
+
     # Pre-index data for O(1) lookups instead of O(n) DataFrame filtering
     # Index by appno -> list of rows
     appno_index = {}
     for idx, row in df_unfiltered.iterrows():
         if pd.notna(row.appno):
-            appnos = str(row.appno).split(';')
+            appnos = str(row.appno).split(";")
             for appno in appnos:
                 appno = appno.strip()
                 if appno:
                     if appno not in appno_index:
                         appno_index[appno] = []
                     appno_index[appno].append(idx)
-    
+
     # Index by extractedappno -> list of rows
     extractedappno_index = {}
     for idx, row in df_unfiltered.iterrows():
         if pd.notna(row.extractedappno):
-            appnos = str(row.extractedappno).split(';')
+            appnos = str(row.extractedappno).split(";")
             for appno in appnos:
                 appno = appno.strip()
                 if appno:
                     if appno not in extractedappno_index:
                         extractedappno_index[appno] = []
                     extractedappno_index[appno].append(idx)
-    
+
     # Index by docname (normalized) -> list of rows
     docname_index = {}
     for idx, row in df_unfiltered.iterrows():
@@ -97,7 +96,7 @@ def retrieve_edges_list(df, df_unfiltered):
                 if docname not in docname_index:
                     docname_index[docname] = []
                 docname_index[docname].append(idx)
-    
+
     # Pre-parse dates and years
     logging.info("Pre-parsing dates...")
     date_cache = {}
@@ -109,27 +108,27 @@ def retrieve_edges_list(df, df_unfiltered):
                 if date:
                     date_cache[idx] = date
                     year_cache[idx] = date.year
-            except:
+            except (ValueError, TypeError):
                 pass
-    
+
     # Pre-store language codes
     lang_cache = {}
     for idx, row in df_unfiltered.iterrows():
         if pd.notna(row.languageisocode):
             lang_cache[idx] = str(row.languageisocode).upper()
-    
+
     # Pre-store ECLIs
     ecli_cache = {}
     for idx, row in df_unfiltered.iterrows():
         if pd.notna(row.ecli):
             ecli_cache[idx] = str(row.ecli)
-    
-    logging.info(f"Indexes created:")
+
+    logging.info("Indexes created:")
     logging.info(f"  - Appno index: {len(appno_index)} entries")
     logging.info(f"  - Extracted appno index: {len(extractedappno_index)} entries")
     logging.info(f"  - Docname index: {len(docname_index)} entries")
     logging.info(f"  - Date cache: {len(date_cache)} entries")
-    
+
     # Now process edges with fast lookups
     edges_list = []  # Collect edges in list, then convert to DataFrame at end
     count = 0
@@ -137,18 +136,27 @@ def retrieve_edges_list(df, df_unfiltered):
     missing_cases = []
 
     logging.info(f"Processing {len(df)} cases...")
-    
-    for index, item in tqdm(df.iterrows(), total=len(df), desc="Calculating edges", colour="GREEN", position=0, leave=True):
+
+    for index, item in tqdm(
+        df.iterrows(),
+        total=len(df),
+        desc="Calculating edges",
+        colour="GREEN",
+        position=0,
+        leave=True,
+    ):
         eclis = set()
         extracted_appnos = []
         if pd.notna(item.extractedappno):
-            extracted_appnos = [x.strip() for x in str(item.extractedappno).split(';') if x.strip()]
+            extracted_appnos = [
+                x.strip() for x in str(item.extractedappno).split(";") if x.strip()
+            ]
 
         if pd.notna(item.scl):
-            ref_list = str(item.scl).split(';')
+            ref_list = str(item.scl).split(";")
             new_ref_list = []
             for ref in ref_list:
-                ref = re.sub('\n', '', ref).strip()
+                ref = re.sub("\n", "", ref).strip()
                 if ref:
                     new_ref_list.append(ref)
 
@@ -160,10 +168,10 @@ def retrieve_edges_list(df, df_unfiltered):
                 if extracted_appnos:
                     app_numbers.extend(extracted_appnos)
                 app_numbers = [x.strip() for x in app_numbers if x.strip()]
-                
+
                 # Find matching cases
                 candidate_indices = set()
-                
+
                 # First try by application number (fastest)
                 if app_numbers:
                     for appno in app_numbers:
@@ -171,7 +179,7 @@ def retrieve_edges_list(df, df_unfiltered):
                             candidate_indices.update(appno_index[appno])
                         if appno in extractedappno_index:
                             candidate_indices.update(extractedappno_index[appno])
-                
+
                 # If no matches, try by casename
                 if not candidate_indices:
                     casename = get_casename(ref)
@@ -179,22 +187,22 @@ def retrieve_edges_list(df, df_unfiltered):
                         # Normalize casename for lookup (use same logic as lookup_casename)
                         patterns = clean_pattern
                         uptext = casename.upper()
-                        
-                        if 'NO.' in uptext:
-                            uptext = uptext.replace('NO.', 'No.')
-                        if 'BV' in uptext:
-                            uptext = uptext.replace('BV', 'B.V.')
-                        if 'v.' in casename:
-                            uptext = uptext.replace('V.', 'v.')
+
+                        if "NO." in uptext:
+                            uptext = uptext.replace("NO.", "No.")
+                        if "BV" in uptext:
+                            uptext = uptext.replace("BV", "B.V.")
+                        if "v." in casename:
+                            uptext = uptext.replace("V.", "v.")
                         else:
-                            uptext = uptext.replace('C.', 'c.')
-                        
+                            uptext = uptext.replace("C.", "c.")
+
                         for pattern in patterns:
-                            uptext = re.sub(pattern, '', uptext)
-                        
-                        uptext = re.sub(r'\[.*', "", uptext)
+                            uptext = re.sub(pattern, "", uptext)
+
+                        uptext = re.sub(r"\[.*", "", uptext)
                         uptext = uptext.strip()
-                        
+
                         # Try exact match first
                         if uptext in docname_index:
                             candidate_indices.update(docname_index[uptext])
@@ -208,17 +216,17 @@ def retrieve_edges_list(df, df_unfiltered):
                                     matches_found += len(indices)
                                     if matches_found > 100:  # Limit to prevent slowdown
                                         break
-                
+
                 # Filter candidates by language and year
-                components = ref.split(',')
+                components = ref.split(",")
                 year_from_ref = get_year_from_ref(components)
-                
+
                 # Determine language from reference
-                if 'v.' in components[0]:
-                    ref_lang = 'ENG'
+                if "v." in components[0]:
+                    ref_lang = "ENG"
                 else:
-                    ref_lang = 'FRE'
-                
+                    ref_lang = "FRE"
+
                 # Filter candidates
                 final_candidates = []
                 for idx in candidate_indices:
@@ -227,7 +235,7 @@ def retrieve_edges_list(df, df_unfiltered):
                         case_lang = lang_cache[idx]
                         if ref_lang not in case_lang:
                             continue
-                    
+
                     # Filter by year
                     if year_from_ref > 0 and idx in year_cache:
                         if year_cache[idx] != year_from_ref:
@@ -241,13 +249,13 @@ def retrieve_edges_list(df, df_unfiltered):
                                     date = dateparser.parse(str(row.judgementdate))
                                     if date and date.year != year_from_ref:
                                         continue
-                        except:
+                        except (ValueError, TypeError, AttributeError):
                             continue
-                    
+
                     # Add ECLI if available
                     if idx in ecli_cache:
                         final_candidates.append(ecli_cache[idx])
-                
+
                 if final_candidates:
                     eclis.update(final_candidates)
                 else:
@@ -256,29 +264,24 @@ def retrieve_edges_list(df, df_unfiltered):
 
             # Add edges for this case
             if eclis and pd.notna(item.ecli):
-                edges_list.append({
-                    'ecli': str(item.ecli),
-                    'references': list(eclis)
-                })
+                edges_list.append({"ecli": str(item.ecli), "references": list(eclis)})
 
     logging.info(f"\nNumber of missed cases: {count}")
     logging.info(f"Total number of references: {tot_num_refs}")
     logging.info(f"Total edges found: {len(edges_list)}")
-    
+
     # Convert to DataFrame
     if edges_list:
         edges = pd.DataFrame(edges_list)
-        edges = edges.groupby('ecli', as_index=False).agg({'references': 'sum'})
+        edges = edges.groupby("ecli", as_index=False).agg({"references": "sum"})
     else:
-        edges = pd.DataFrame(columns=['ecli', 'references'])
-    
+        edges = pd.DataFrame(columns=["ecli", "references"])
+
     missing_cases_set = set(missing_cases)
     missing_cases = list(missing_cases_set)
-    missing_df = pd.DataFrame({'missing_references': missing_cases})
-    
+    missing_df = pd.DataFrame({"missing_references": missing_cases})
+
     return edges, missing_df
-
-
 
 
 def lookup_app_number(pattern, df):
@@ -286,10 +289,10 @@ def lookup_app_number(pattern, df):
     Returns a list with rows containing the cases linked to the found app numbers.
     """
     # Handle case where appno might not exist
-    if 'appno' not in df.columns:
+    if "appno" not in df.columns:
         return pd.DataFrame()
-    
-    row = df.loc[df['appno'].isin(pattern)]
+
+    row = df.loc[df["appno"].isin(pattern)]
 
     if row.empty:
         return pd.DataFrame()
@@ -338,17 +341,17 @@ def lookup_casename(ref, df):
 
     if "V." in name:
         uptext = uptext.replace("V.", "v.")
-        lang = "ENG"
     else:
         uptext = uptext.replace("C.", "c.")
-        lang = "FRE"
 
     for pattern in patterns:
         uptext = re.sub(pattern, "", uptext)
 
     uptext = re.sub(r"\[.*", "", uptext)
     uptext = uptext.strip()
-    row = df[df["docname"].str.contains(uptext, regex=False, flags=re.IGNORECASE, na=False)]
+    row = df[
+        df["docname"].str.contains(uptext, regex=False, flags=re.IGNORECASE, na=False)
+    ]
 
     # if len(row) == 0:
     #     print("no cases matched: ", name)
@@ -388,26 +391,26 @@ def get_year_from_ref(ref):
         parsed_date = dateparser.parse(component)
         if parsed_date is not None:
             date = parsed_date
-        elif ("ECHR" in component or "CEDH" in component):
+        elif "ECHR" in component or "CEDH" in component:
             date_str = re.sub("ECHR ", "", component)
             date_str = re.sub("CEDH ", "", date_str)
             date_str = date_str.strip()
             date_str = re.sub("-.*", "", date_str)
             date_str = re.sub(r"\s.*", "", date_str)
             date = dateparser.parse(date_str)
-   
+
     try:
         if date is not None:
             return date.year
         return 0
-    except:
+    except (AttributeError, TypeError):
         return 0
 
 
 def echr_nodes_edges(metadata_path=None, data=None):
     """
     Create nodes and edges list for the ECHR data.
-    
+
     Parameters:
     - metadata_path: Path to metadata CSV file (optional if data is provided)
     - data: DataFrame with metadata (optional if metadata_path is provided)
@@ -418,7 +421,7 @@ def echr_nodes_edges(metadata_path=None, data=None):
     elif data is None:
         logging.warning("No dataframe data provided. Returning...")
         return "", "", ""
-    
+
     logging.info("\n--- EXTRACTING NODES LIST ---\n")
     # get_language_from_metadata(nodes)
 
