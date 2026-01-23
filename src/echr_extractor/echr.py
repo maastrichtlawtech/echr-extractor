@@ -250,7 +250,7 @@ def get_echr_extra(
 
 
 def get_nodes_edges(metadata_path=None, df=None, save_file="y"):
-    nodes, edges = echr_nodes_edges(metadata_path=metadata_path, data=df)
+    nodes, edges, missing_df = echr_nodes_edges(metadata_path=metadata_path, data=df)
     if save_file == "y":
         Path("data").mkdir(parents=True, exist_ok=True)
         edges.to_csv(
@@ -261,6 +261,12 @@ def get_nodes_edges(metadata_path=None, df=None, save_file="y"):
         )
         nodes.to_json(os.path.join("data", "ECHR_nodes.json"), orient="records")
         edges.to_json(os.path.join("data", "ECHR_edges.json"), orient="records")
-        return nodes, edges
+        if missing_df is not None and len(missing_df) > 0:
+            missing_df.to_csv(
+                os.path.join("data", "ECHR_missing_references.csv"),
+                index=False,
+                encoding="utf-8",
+            )
+        return nodes, edges, missing_df
 
-    return nodes, edges
+    return nodes, edges, missing_df

@@ -126,14 +126,16 @@ class TestGetNodesEdges:
         sample_df = pd.DataFrame({"itemid": ["001-123456"]})
         mock_nodes = pd.DataFrame({"node_id": [1], "itemid": ["001-123456"]})
         mock_edges = pd.DataFrame({"source": [1], "target": [2]})
-        mock_nodes_edges.return_value = (mock_nodes, mock_edges)
+        mock_missing = pd.DataFrame({"missing_references": []})
+        mock_nodes_edges.return_value = (mock_nodes, mock_edges, mock_missing)
 
         # Call function
-        nodes, edges = get_nodes_edges(df=sample_df, save_file="n")
+        nodes, edges, missing_df = get_nodes_edges(df=sample_df, save_file="n")
 
         # Assertions
         assert isinstance(nodes, pd.DataFrame)
         assert isinstance(edges, pd.DataFrame)
+        assert isinstance(missing_df, pd.DataFrame)
         mock_nodes_edges.assert_called_once_with(metadata_path=None, data=sample_df)
 
     @patch("echr_extractor.echr.echr_nodes_edges")
@@ -142,10 +144,13 @@ class TestGetNodesEdges:
         # Setup mock
         mock_nodes = pd.DataFrame({"node_id": [1]})
         mock_edges = pd.DataFrame({"source": [1], "target": [2]})
-        mock_nodes_edges.return_value = (mock_nodes, mock_edges)
+        mock_missing = pd.DataFrame({"missing_references": []})
+        mock_nodes_edges.return_value = (mock_nodes, mock_edges, mock_missing)
 
         # Call function
-        nodes, edges = get_nodes_edges(metadata_path="test.csv", save_file="n")
+        nodes, edges, missing_df = get_nodes_edges(
+            metadata_path="test.csv", save_file="n"
+        )
 
         # Assertions
         assert isinstance(nodes, pd.DataFrame)
