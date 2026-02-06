@@ -1,3 +1,4 @@
+import re
 import threading
 
 import requests
@@ -13,15 +14,46 @@ def get_full_text_from_html(html_text):
     soup = BeautifulSoup(html_text, "html.parser")
     for script in soup(["script", "style"]):
         script.extract()  # rip it out
-    text = soup.get_text()
-    # break into lines and remove leading and trailing space on each
-    lines = (line.strip() for line in text.splitlines())
-    # break multi-headlines into a line each
-    chunks = (phrase.strip() for line in lines for phrase in line.split("  "))
-    # drop blank lines
-    text = "\n".join(chunk for chunk in chunks if chunk)
-    text = text.replace(",", "_")
-    return text
+    def _extract_text(tag):
+        br_token = "__HUDOC_BR__"
+        for br in tag.find_all("br"):
+            br.replace_with(br_token)
+        text = tag.get_text(" ", strip=True)
+        text = text.replace(br_token, "\n")
+        text = re.sub(r"[ \t]*\n[ \t]*", "\n", text)
+        return text
+
+    def _extract_list_item_text(li_tag):
+        li_clone = BeautifulSoup(str(li_tag), "html.parser").find("li")
+        if li_clone is None:
+            return ""
+        for nested in li_clone.find_all(["ol", "ul"]):
+            nested.decompose()
+        return _extract_text(li_clone)
+
+    body = soup.body or soup
+    blocks = []
+    for elem in body.find_all(["p", "li"]):
+        if elem.name == "p":
+            text = _extract_text(elem)
+            if text:
+                blocks.append(text)
+        elif elem.name == "li":
+            if elem.find("p"):
+                continue
+            text = _extract_list_item_text(elem)
+            if text:
+                blocks.append(text)
+
+    if blocks:
+        text = "\n\n".join(blocks)
+    else:
+        text = soup.get_text(separator="\n")
+
+    text = text.replace("\r\n", "\n").replace("\r", "\n")
+    text = re.sub(r"[ \t]+", " ", text)
+    text = re.sub(r"\n{3,}", "\n\n", text)
+    return text.strip()
 
 
 def download_full_text_main(df, threads):
