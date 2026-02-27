@@ -3,7 +3,7 @@
 import argparse
 import sys
 
-from . import get_echr, get_echr_extra, get_nodes_edges
+from . import get_echr, get_echr_extra, get_echr_segments, get_nodes_edges
 
 
 def main() -> None:
@@ -39,6 +39,32 @@ def main() -> None:
     )
     network_parser.add_argument(
         "--no-save", action="store_true", help="Don't save files, return objects only"
+    )
+
+    # Segmentation command
+    segment_parser = subparsers.add_parser(
+        "segment", help="Segment ECHR full texts into legal sections"
+    )
+    segment_parser.add_argument(
+        "--metadata-path", type=str, required=True, help="Path to metadata CSV file"
+    )
+    segment_parser.add_argument(
+        "--fulltext-path", type=str, required=True, help="Path to full-text JSON file"
+    )
+    segment_parser.add_argument(
+        "--no-save", action="store_true", help="Don't save files, return objects only"
+    )
+    segment_parser.add_argument(
+        "--min-segment-length",
+        type=int,
+        default=50,
+        help="Minimum segment length in chars (default: 50)",
+    )
+    segment_parser.add_argument(
+        "--allowed-langs",
+        nargs="+",
+        default=["ENG", "FRE"],
+        help="Languages to process (default: ENG FRE)",
     )
 
     args = parser.parse_args()
@@ -84,6 +110,23 @@ def main() -> None:
             print(f"Generated {len(nodes)} nodes and {len(edges)} edges")
             if missing_df is not None and len(missing_df) > 0:
                 print(f"Found {len(missing_df)} missing references")
+
+        elif args.command == "segment":
+            import json as json_mod
+
+            import pandas as pd
+
+            df = pd.read_csv(args.metadata_path)
+            with open(args.fulltext_path) as f:
+                full_texts = json_mod.load(f)
+            result = get_echr_segments(
+                df=df,
+                full_texts=full_texts,
+                save_file="n" if args.no_save else "y",
+                allowed_langs=tuple(args.allowed_langs),
+                min_segment_length=args.min_segment_length,
+            )
+            print(f"Segmented {len(result)} documents into legal sections")
 
     except Exception as e:
         print(f"Error: {e}", file=sys.stderr)

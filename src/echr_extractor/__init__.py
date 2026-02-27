@@ -2,7 +2,12 @@
 
 import logging
 
-from .echr import get_echr, get_echr_extra, get_nodes_edges
+from .echr import (
+    get_echr,
+    get_echr_extra,
+    get_echr_segments,
+    get_nodes_edges,
+)
 
 try:
     from ._version import version as __version__
@@ -19,5 +24,6 @@ logging.basicConfig(level=logging.INFO)
 __all__ = [
     "get_echr",
     "get_echr_extra",
+    "get_echr_segments",
     "get_nodes_edges",
 ]
