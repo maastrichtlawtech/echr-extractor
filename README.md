@@ -11,6 +11,7 @@ A powerful Python library for extracting case law data from the European Court o
 - 🔄 **Intelligent error handling** - exponential backoff retry logic for failed requests
 - 💾 **Memory-efficient processing** - chunked processing with garbage collection for large datasets
 - 📈 **Progress tracking** - real-time tqdm progress bars for long-running operations
+- 🔍 **Text segmentation** - segment full texts into legal sections (procedure, facts, law, operative, etc.)
 - 🕸️ **Network analysis** - generate nodes and edges for citation network graphs
 - 🌍 **Multiple language support** - English, French, and other ECHR languages
 - 📦 **Flexible output formats** - CSV, JSON, and in-memory pandas DataFrames
@@ -42,7 +43,7 @@ pip install echr-extractor
 ### Installation and Basic Usage
 
 ```python
-from echr_extractor import get_echr, get_echr_extra, get_nodes_edges
+from echr_extractor import get_echr, get_echr_extra, get_nodes_edges, get_echr_segments
 
 # Get basic metadata for 100 English cases
 df = get_echr(count=100, language=['ENG'])
@@ -105,6 +106,22 @@ Generates nodes and edges for citation network analysis from case metadata.
 - `save_file` (str, default: 'y'): Save to files ('y') or return objects ('n')
 
 **Returns:** Tuple of (nodes DataFrame, edges DataFrame, missing references DataFrame)
+
+### `get_echr_segments()` - Segment Full Texts
+
+Segments ECHR full-text documents into structured legal sections. Accepts either the raw outputs from `get_echr_extra()` or a pre-merged DataFrame.
+
+**Parameters:**
+- `df` (DataFrame, optional): Metadata DataFrame from `get_echr_extra()`
+- `full_texts` (list, optional): Full-text list from `get_echr_extra()`
+- `corpus_df` (DataFrame, optional): Pre-merged DataFrame with `itemid`, `languageisocode`, and `fulltext` columns
+- `save_file` (str, default: 'y'): Save to CSV ('y') or return DataFrame ('n')
+- `allowed_langs` (tuple, default: ('ENG', 'FRE')): Language codes to process
+- `min_segment_length` (int, default: 50): Minimum characters for a segment to be kept
+
+**Output columns:** `itemid`, `languageisocode`, `ecli`, `parser_mode`, `procedure`, `facts`, `complaints`, `law`, `operative`, `subject_matter`, `court_assessment`, `separate_opinion`, `appendix`, `num_sections`, `error`
+
+**Supported document types:** Standard judgments, commission decisions, communicated cases, info notes, press releases
 
 ## Usage Examples
 
@@ -214,7 +231,57 @@ print(f"Missing references: {len(missing)} unresolved citations")
 # - data/ECHR_edges.json (JSON format)
 ```
 
-### Example 6: Advanced Querying with Query Payloads
+### Example 6: Segment Full Texts into Legal Sections
+
+```python
+from echr_extractor import get_echr_extra, get_echr_segments
+
+# Step 1: Download metadata and full text
+df, full_texts = get_echr_extra(count=50, language=['ENG'], threads=10)
+
+# Step 2: Segment into legal sections
+segments = get_echr_segments(df=df, full_texts=full_texts, save_file='n')
+
+print(f"Segmented {len(segments)} documents")
+print(f"Sections found per doc: {segments['num_sections'].mean():.1f} avg")
+
+# Access individual sections
+for _, row in segments.head(3).iterrows():
+    print(f"\n--- {row['itemid']} ---")
+    if row['procedure']:
+        print(f"  Procedure: {row['procedure'][:80]}...")
+    if row['facts']:
+        print(f"  Facts: {row['facts'][:80]}...")
+    if row['law']:
+        print(f"  Law: {row['law'][:80]}...")
+```
+
+### Example 7: Segment Previously Downloaded Data
+
+```python
+import json
+import pandas as pd
+from echr_extractor import get_echr_segments
+
+# Load previously saved data
+df = pd.read_csv('data/echr_metadata.csv')
+with open('data/echr_full_text.json') as f:
+    full_texts = json.load(f)
+
+# Segment with custom settings
+segments = get_echr_segments(
+    df=df,
+    full_texts=full_texts,
+    allowed_langs=('ENG',),       # English only
+    min_segment_length=100,       # Skip very short segments
+)
+
+# Filter to documents that have a 'law' section
+has_law = segments[segments['law'].notna()]
+print(f"{len(has_law)} documents have a 'law' section")
+```
+
+### Example 8: Advanced Querying with Query Payloads
 
 ```python
 from echr_extractor import get_echr
@@ -235,7 +302,7 @@ df = get_echr(
 )
 ```
 
-### Example 7: Using Direct HUDOC URLs
+### Example 9: Using Direct HUDOC URLs
 
 ```python
 from echr_extractor import get_echr
@@ -246,7 +313,7 @@ url = 'https://hudoc.echr.coe.int/eng#{%22itemid%22:[%22001-57574%22]}'
 df = get_echr(link=url)
 ```
 
-### Example 8: Multi-Language Extraction
+### Example 10: Multi-Language Extraction
 
 ```python
 from echr_extractor import get_echr
@@ -263,7 +330,7 @@ df = get_echr(
 print(df['languageisocode'].value_counts())
 ```
 
-### Example 9: Error Handling and Resilience
+### Example 11: Error Handling and Resilience
 
 ```python
 from echr_extractor import get_echr
@@ -295,6 +362,13 @@ echr-extractor extract-full --count 50 --language ENG --threads 10
 # Generate network data
 echr-extractor network --metadata-path data/echr_metadata.csv
 
+# Segment full texts into legal sections
+echr-extractor segment \
+  --metadata-path data/echr_metadata.csv \
+  --fulltext-path data/echr_full_text.json \
+  --allowed-langs ENG FRE \
+  --min-segment-length 50
+
 # Show help
 echr-extractor --help
 ```
@@ -308,6 +382,7 @@ When `save_file='y'` (default), the library creates a `data/` directory with:
 - `ECHR_nodes.csv` - Network nodes (when using `get_nodes_edges`)
 - `ECHR_edges.csv` - Network edges (when using `get_nodes_edges`)
 - `ECHR_missing_references.csv` - Unresolved citations (when using `get_nodes_edges`)
+- `ECHR_segments.csv` - Segmented legal sections (when using `get_echr_segments`)
 
 ## Performance Tips
 
