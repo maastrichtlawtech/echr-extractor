@@ -92,7 +92,6 @@ SEGMENTATION_PATTERNS = {
         r"(?:^|\n)\s*(?:[IVX]+\.\s+)?(?:LA\s+)?PROC(?:É|E\u0301|é|e\u0301)DURE\s*(?:\n|$)",
         r"(?:^|\n|:)\s*(?:[IVX]+\.\s+)?PROC(?:É|E\u0301|é|e\u0301)DURE(?=[\s\d\n])",
     ],
-
     # 2. THE FACTS / EN FAIT
     "facts": [
         # Modern inline
@@ -121,7 +120,6 @@ SEGMENTATION_PATTERNS = {
         r"(?:^|\n|:)\s*(?:[IVX]+\.\s+)?LES\s+FAITS(?=[\s\d\n])",
         r"LES\s+CIRCONSTANCES\s+DE\s+L['\'\u2019]AFFAIRE",
     ],
-
     # 3. COMPLAINTS / GRIEFS
     "complaints": [
         r"(?:^|\n)\s*(?:[IVX]+\.\s+)?(?:THE\s+)?COMPLAINTS?\s*(?:\n|$)",
@@ -136,7 +134,6 @@ SEGMENTATION_PATTERNS = {
         r"(?:^|[\n\r:_\.)]\s*)(?:[IVX]+\.\s+)?(?:THE\s+)?COMPLAINTS?\b",
         r"(?:^|[\n\r:_\.)]\s*)(?:[IVX]+\.\s+)?LES\s+GRIEFS?\b",
     ],
-
     # 4. THE LAW / EN DROIT
     "law": [
         # Modern inline
@@ -166,7 +163,6 @@ SEGMENTATION_PATTERNS = {
         r"\bLE\s+DROIT\b(?![a-z])",
         r"\bSUR\s+LE\s+DROIT\b(?![a-z])",
     ],
-
     # 5. OPERATIVE (FOR THESE REASONS)
     "operative": [
         r"FOR\s+THESE\s+REASONS",
@@ -176,7 +172,6 @@ SEGMENTATION_PATTERNS = {
         r"PAR\s+CES\s+MOTIFS",
         r"POUR\s+CES\s+MOTIFS",
     ],
-
     # 6. SEPARATE OPINION(S)
     "separate_opinion": [
         r"(?i)(?:^|[\n\r:_\.)]\s*)SEPARATE\s+OPINIONS?(?:\s+OF)?",
@@ -187,7 +182,6 @@ SEGMENTATION_PATTERNS = {
         r"(?i)(?:^|[\n\r:_\.)]\s*)OPINION\s+(?:CONCORDANTE|DISSIDENTE|PARTIELLEMENT\s+DISSIDENTE)",
         r"(?i)(?:^|[\n\r:_\.)]\s*)OPINION\s+S[ÉE]PAR[ÉE]E(?:\s+CONCORDANTE|\s+DISSIDENTE)?",
     ],
-
     # 7. APPENDIX / ANNEXE
     "appendix": [
         r"(?:^|[\n\r:_\.)]\s*)APPENDIX(?=\s*(?:\n|$|[:—–-]?\s*(?:\d|[IVX]+\.|[A-Z])))",
@@ -199,13 +193,11 @@ SEGMENTATION_PATTERNS = {
         r"(?:^|[\n\r:_\.)]\s*)ANNEXE(?=\s*(?:\n|$|[:—–-]?\s*(?:\d|[IVX]+\.|[A-Z])))",
         r'(?:^|[\n\r:_\.)"]\s*|\s{2,})ANNEXE(?=\s*(?:\n|$|[A-Z]))',
     ],
-
     # 8. SUBJECT MATTER (Committee judgments)
     "subject_matter": [
         r"(?:^|\n)\s*SUBJECT\s+MATTER\s+OF\s+THE\s+CASE\s*(?:\n|$)",
         r"(?<=[\.)\s:])SUBJECT\s+MATTER\s+OF\s+THE\s+CASE(?=\s*[:—–-]?\s*(?:\d|[IVX]+\.|[A-Z]))",
     ],
-
     # 9. THE COURT'S ASSESSMENT (Committee judgments)
     "court_assessment": [
         r"(?:^|\n)\s*THE\s+COURT['\u2019\u2018]S\s+ASSESSMENT\s*(?:\n|$)",
@@ -346,9 +338,7 @@ def _compile_nonstandard_patterns(raw_nonstandard):
 
 # Module-level compiled patterns (compiled once at import time)
 _COMPILED_PATTERNS = _compile_patterns(SEGMENTATION_PATTERNS)
-_COMPILED_NONSTANDARD = _compile_nonstandard_patterns(
-    NONSTANDARD_SEGMENTATION_PATTERNS
-)
+_COMPILED_NONSTANDARD = _compile_nonstandard_patterns(NONSTANDARD_SEGMENTATION_PATTERNS)
 
 
 # ---------------------------------------------------------------------------
@@ -447,10 +437,19 @@ def find_section_boundaries(text, compiled_patterns, original_text=None):
     :return: Sorted list of (section, start_pos, end_pos, matched_text) tuples.
     """
     uppercase_only_sections = {
-        "procedure", "facts", "law", "complaints", "subject_matter",
+        "procedure",
+        "facts",
+        "law",
+        "complaints",
+        "subject_matter",
     }
     header_position_sections = {
-        "procedure", "facts", "complaints", "law", "appendix", "separate_opinion",
+        "procedure",
+        "facts",
+        "complaints",
+        "law",
+        "appendix",
+        "separate_opinion",
     }
 
     # --- Nested validation functions ---
@@ -514,14 +513,10 @@ def find_section_boundaries(text, compiled_patterns, original_text=None):
             )
         if section == "procedure":
             return bool(
-                re.search(
-                    r"PROCEDURE|PROCEEDING|PROC(?:É|E\u0301|é|e\u0301)DURE", mt
-                )
+                re.search(r"PROCEDURE|PROCEEDING|PROC(?:É|E\u0301|é|e\u0301)DURE", mt)
             )
         if section == "complaints":
-            return any(
-                k in mt for k in ["COMPLAINT", "GRIEF", "ALLEGED VIOLATION"]
-            )
+            return any(k in mt for k in ["COMPLAINT", "GRIEF", "ALLEGED VIOLATION"])
         if section == "separate_opinion":
             return "OPINION" in mt
         if section == "appendix":
@@ -555,10 +550,7 @@ def find_section_boundaries(text, compiled_patterns, original_text=None):
         base_text = original_text if original_text is not None else text
         prefix_start = base_text.rfind("\n", 0, start_pos) + 1
         prefix = base_text[prefix_start:start_pos]
-        if not (
-            re.search(r"\s{2,}$", prefix)
-            or re.match(r"^\s{2,}", matched_text)
-        ):
+        if not (re.search(r"\s{2,}$", prefix) or re.match(r"^\s{2,}", matched_text)):
             return False
         if re.search(r"[a-z]", matched_text):
             return False
@@ -600,9 +592,7 @@ def find_section_boundaries(text, compiled_patterns, original_text=None):
                 # Uppercase-only section filter
                 if section in uppercase_only_sections:
                     if re.search(r"[a-z]", matched_text):
-                        base_text = (
-                            original_text if original_text is not None else text
-                        )
+                        base_text = original_text if original_text is not None else text
                         prefix_start = base_text.rfind("\n", 0, start_pos) + 1
                         prefix = base_text[prefix_start:start_pos]
                         if not (
@@ -623,9 +613,7 @@ def find_section_boundaries(text, compiled_patterns, original_text=None):
                     extended_upper = (
                         matched_text + text[end_pos : end_pos + 40]
                     ).upper()
-                    if re.search(
-                        r"ALLEGED\s+VIOLATION\s+OF\s+ARTICLE", extended_upper
-                    ):
+                    if re.search(r"ALLEGED\s+VIOLATION\s+OF\s+ARTICLE", extended_upper):
                         continue
                     if "ALLEGED VIOLATION" in mt_upper:
                         near_law = any(
@@ -641,15 +629,11 @@ def find_section_boundaries(text, compiled_patterns, original_text=None):
                     mt_upper = matched_text.upper()
                     if not ("COURT" in mt_upper and "ASSESSMENT" in mt_upper):
                         continue
-                    base_text = (
-                        original_text if original_text is not None else text
-                    )
+                    base_text = original_text if original_text is not None else text
                     before = base_text[max(0, start_pos - 5) : start_pos]
                     prefix_start = base_text.rfind("\n", 0, start_pos) + 1
                     prefix = base_text[prefix_start:start_pos]
-                    if prefix.strip() != "" and not re.search(
-                        r"[\.\):]\s*$", before
-                    ):
+                    if prefix.strip() != "" and not re.search(r"[\.\):]\s*$", before):
                         continue
 
                 # Header position check
@@ -660,23 +644,22 @@ def find_section_boundaries(text, compiled_patterns, original_text=None):
                             start_pos
                         ):
                             pass  # allowed
-                        elif (
-                            section == "appendix"
-                            and is_appendix_inline_header(
-                                start_pos, end_pos, matched_text
-                            )
+                        elif section == "appendix" and is_appendix_inline_header(
+                            start_pos, end_pos, matched_text
                         ):
                             pass  # allowed
                         else:
                             continue
 
                 # Strong header suppression
-                if (
-                    section in strong_sections
-                    and not is_strong_header(section, matched_text)
+                if section in strong_sections and not is_strong_header(
+                    section, matched_text
                 ):
                     # Exception: keep RELEVANT LEGAL FRAMEWORK even if THE LAW
-                    if section == "law" and "RELEVANT LEGAL FRAMEWORK" in matched_text.upper():  # pragma: no cover
+                    if (
+                        section == "law"
+                        and "RELEVANT LEGAL FRAMEWORK" in matched_text.upper()
+                    ):  # pragma: no cover
                         pass  # pragma: no cover
                     else:
                         continue
@@ -696,9 +679,7 @@ def find_section_boundaries(text, compiled_patterns, original_text=None):
             last_pos = pos
             last_section = section
         else:
-            if section != last_section and is_strong_header(
-                section, matched_text
-            ):
+            if section != last_section and is_strong_header(section, matched_text):
                 filtered.append(boundary)
                 last_pos = pos
                 last_section = section
@@ -767,9 +748,7 @@ def _segment_text_nonstandard(text, compiled_ns_patterns, min_segment_length=35)
                 start_pos = m.start()
                 if start_pos not in seen_positions:
                     seen_positions.add(start_pos)
-                    boundaries.append(
-                        (section, start_pos, m.end(), m.group())
-                    )
+                    boundaries.append((section, start_pos, m.end(), m.group()))
 
     boundaries.sort(key=lambda x: x[1])
     return extract_segments_from_boundaries(text, boundaries, min_segment_length)
@@ -872,17 +851,11 @@ def segment_echr_texts(
                 continue
 
             # Stage 1: Route parser mode
-            doctype = (
-                getattr(row, "doctype", None) if has_doctype else None
-            )
+            doctype = getattr(row, "doctype", None) if has_doctype else None
             doctypebranch = (
-                getattr(row, "doctypebranch", None)
-                if has_doctypebranch
-                else None
+                getattr(row, "doctypebranch", None) if has_doctypebranch else None
             )
-            parser_mode = choose_parser_mode(
-                fulltext, doctype, doctypebranch
-            )
+            parser_mode = choose_parser_mode(fulltext, doctype, doctypebranch)
             result["parser_mode"] = parser_mode
 
             # Stage 2 & 3: Find boundaries and extract
