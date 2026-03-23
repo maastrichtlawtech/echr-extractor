@@ -97,9 +97,7 @@ class TestChooseParserMode:
         assert choose_parser_mode("text", metadata_doctype="CLINF") == "info_note"
 
     def test_info_note_branch(self):
-        assert (
-            choose_parser_mode("text", metadata_doctypebranch="CLIN") == "info_note"
-        )
+        assert choose_parser_mode("text", metadata_doctypebranch="CLIN") == "info_note"
 
     def test_press_release_doctype(self):
         assert choose_parser_mode("text", metadata_doctype="PR") == "press_release"
@@ -154,9 +152,7 @@ class TestChooseParserMode:
         assert choose_parser_mode("text", metadata_doctype=None) == "standard"
 
     def test_nan_metadata_values(self):
-        assert (
-            choose_parser_mode("text", metadata_doctype=float("nan")) == "standard"
-        )
+        assert choose_parser_mode("text", metadata_doctype=float("nan")) == "standard"
 
 
 # ---------------------------------------------------------------------------
@@ -176,9 +172,7 @@ class TestDetectContentRouting:
         assert _detect_content_routing("Communicated on 2020") == "communicated_case"
 
     def test_objet_affaire(self):
-        assert (
-            _detect_content_routing("OBJET DE L\u2019AFFAIRE") == "communicated_case"
-        )
+        assert _detect_content_routing("OBJET DE L\u2019AFFAIRE") == "communicated_case"
 
 
 # ---------------------------------------------------------------------------
@@ -272,7 +266,9 @@ class TestExtractSegmentsFromBoundaries:
             ("procedure", 4, 13, "PROCEDURE"),
             ("facts", 18, 27, "THE FACTS"),
         ]
-        segments = extract_segments_from_boundaries(text, boundaries, min_segment_length=3)
+        segments = extract_segments_from_boundaries(
+            text, boundaries, min_segment_length=3
+        )
         assert "procedure" in segments
         assert "facts" in segments
 
@@ -286,7 +282,9 @@ class TestExtractSegmentsFromBoundaries:
             ("procedure", 0, 9, "PROCEDURE"),
             ("facts", 12, 21, "THE FACTS"),
         ]
-        segments = extract_segments_from_boundaries(text, boundaries, min_segment_length=50)
+        segments = extract_segments_from_boundaries(
+            text, boundaries, min_segment_length=50
+        )
         # "PROCEDURE\nX" is too short (11 chars), should be filtered
         assert "procedure" not in segments
 
@@ -299,7 +297,9 @@ class TestExtractSegmentsFromBoundaries:
             ("separate_opinion", 0, 18, "OPINION OF JUDGE A"),
             ("separate_opinion", 30, 48, "OPINION OF JUDGE B"),
         ]
-        segments = extract_segments_from_boundaries(text, boundaries, min_segment_length=10)
+        segments = extract_segments_from_boundaries(
+            text, boundaries, min_segment_length=10
+        )
         assert "separate_opinion" in segments
         assert "\n\n" in segments["separate_opinion"]
 
@@ -389,18 +389,14 @@ class TestSegmentEchrTexts:
         assert result.iloc[0]["ecli"] == "ECLI:CE:ECHR:2020:TEST"
 
     def test_soft_skip_info_note(self):
-        df = _make_df(
-            "Some info note text", doctype="CLIN"
-        )
+        df = _make_df("Some info note text", doctype="CLIN")
         result = segment_echr_texts(df)
         assert result.iloc[0]["parser_mode"] == "info_note"
         assert result.iloc[0]["error"] is None
         assert result.iloc[0]["num_sections"] == 0
 
     def test_soft_skip_press_release(self):
-        df = _make_df(
-            "Press release text", doctype="PR"
-        )
+        df = _make_df("Press release text", doctype="PR")
         result = segment_echr_texts(df)
         assert result.iloc[0]["parser_mode"] == "press_release"
         assert result.iloc[0]["error"] is None
@@ -800,6 +796,7 @@ class TestExceptionHandling:
 
     def test_exception_from_bad_fulltext_type(self):
         """Force an actual exception in the segmentation pipeline."""
+
         # Use a custom object that passes isinstance(x, str) but fails later
         class BadStr(str):
             def replace(self, *args, **kwargs):
@@ -872,9 +869,7 @@ class TestPrepareEchrCorpus:
         assert result.iloc[1]["fulltext"] == "Text two content"
 
     def test_handles_key_name_mismatch(self):
-        df = pd.DataFrame(
-            {"itemid": ["001-123456"], "languageisocode": ["ENG"]}
-        )
+        df = pd.DataFrame({"itemid": ["001-123456"], "languageisocode": ["ENG"]})
         full_texts = [
             {"item_id": "001-123456", "ecli": "E1", "full_text": "txt content"}
         ]
