@@ -14,6 +14,7 @@ def get_full_text_from_html(html_text):
     soup = BeautifulSoup(html_text, "html.parser")
     for script in soup(["script", "style"]):
         script.extract()  # rip it out
+
     def _extract_text(tag):
         br_token = "__HUDOC_BR__"
         for br in tag.find_all("br"):
