@@ -93,6 +93,12 @@ def test_get_full_text_hudoc_main_content_sample():
     assert "Kastriot ISMAILAJ" in text
 
     assert "THIRD SECTION\n\nCASE OF ISMAILAJ AND OTHERS v. ALBANIA" in text
-    assert "Second set of proceedings for the confiscation of assets\n\nFirst-instance and appeal proceedings" in text
-    assert "This judgment has become final under Article 44 § 2 of the Convention.\nIt may be subject to editorial revision." in text
+    assert (
+        "Second set of proceedings for the confiscation of assets\n\nFirst-instance and appeal proceedings"
+        in text
+    )
+    assert (
+        "This judgment has become final under Article 44 § 2 of the Convention.\nIt may be subject to editorial revision."
+        in text
+    )
     assert "\nLətif Hüseynov," in text
