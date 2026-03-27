@@ -3,6 +3,8 @@ import logging
 import os
 from pathlib import Path
 
+import pandas as pd
+
 from .ECHR_html_downloader import download_full_text_main
 from .ECHR_metadata_harvester import get_echr_metadata
 from .ECHR_nodes_edges_list_transform import echr_nodes_edges
@@ -270,3 +272,103 @@ def get_nodes_edges(metadata_path=None, df=None, save_file="y"):
         return nodes, edges, missing_df
 
     return nodes, edges, missing_df
+
+
+def prepare_echr_corpus(df, full_texts):
+    """Merge metadata DataFrame with full-text data for segmentation.
+
+    Combines the separate metadata and full-text outputs from
+    get_echr_extra() into a single DataFrame suitable for
+    segment_echr_texts().
+
+    :param pd.DataFrame df: Metadata DataFrame from get_echr() or get_echr_extra().
+    :param list full_texts: List of full-text dicts from get_echr_extra(),
+        each with keys 'item_id', 'ecli', 'full_text'.
+    :return: DataFrame with metadata columns plus 'fulltext' column.
+
+    Example:
+        df, full_texts = get_echr_extra(count=100)
+        corpus = prepare_echr_corpus(df, full_texts)
+        # corpus now has a 'fulltext' column ready for segmentation
+    """
+    if df is False or not full_texts:
+        logging.warning("Cannot prepare corpus: invalid input")
+        return pd.DataFrame()
+
+    texts_df = pd.DataFrame(full_texts)
+
+    # Handle key naming mismatch: full_texts use 'item_id', metadata uses 'itemid'
+    rename_map = {}
+    if "item_id" in texts_df.columns:
+        rename_map["item_id"] = "itemid"
+    if "full_text" in texts_df.columns:
+        rename_map["full_text"] = "fulltext"
+    if rename_map:
+        texts_df = texts_df.rename(columns=rename_map)
+
+    # Keep only itemid and fulltext to avoid duplicate columns on merge
+    merge_cols = [c for c in ["itemid", "fulltext"] if c in texts_df.columns]
+    texts_df = texts_df[merge_cols]
+
+    merged = df.merge(texts_df, on="itemid", how="left")
+    return merged
+
+
+def get_echr_segments(
+    df=None,
+    full_texts=None,
+    corpus_df=None,
+    save_file="y",
+    allowed_langs=("ENG", "FRE"),
+    min_segment_length=50,
+):
+    """Segment ECHR documents into structured legal sections.
+
+    Accepts either:
+    - A pre-merged DataFrame with 'fulltext' column (via corpus_df), or
+    - The separate outputs from get_echr_extra() (via df and full_texts)
+
+    :param pd.DataFrame df: Metadata DataFrame from get_echr_extra().
+    :param list full_texts: Full-text list from get_echr_extra().
+    :param pd.DataFrame corpus_df: Pre-merged DataFrame with 'fulltext' column.
+    :param str save_file: Whether to save results to CSV ("y" or "n", default: "y").
+    :param tuple allowed_langs: Language codes to process (default: ('ENG', 'FRE')).
+    :param int min_segment_length: Minimum segment length in chars (default: 50).
+    :return: DataFrame with segmented sections.
+
+    Example:
+        # From get_echr_extra output
+        df, full_texts = get_echr_extra(count=100)
+        segments = get_echr_segments(df=df, full_texts=full_texts)
+
+        # From pre-merged corpus
+        from echr_extractor.echr import prepare_echr_corpus
+        corpus = prepare_echr_corpus(df, full_texts)
+        segments = get_echr_segments(corpus_df=corpus, save_file='n')
+    """
+    from .ECHR_text_segmenter import segment_echr_texts
+
+    if corpus_df is not None:
+        input_df = corpus_df
+    elif df is not None and full_texts is not None:
+        input_df = prepare_echr_corpus(df, full_texts)
+    else:
+        logging.error("Provide either corpus_df or both df and full_texts")
+        return pd.DataFrame()
+
+    if input_df.empty:
+        return pd.DataFrame()
+
+    result = segment_echr_texts(
+        input_df,
+        allowed_langs=allowed_langs,
+        min_segment_length=min_segment_length,
+    )
+
+    if save_file == "y":
+        Path("data").mkdir(parents=True, exist_ok=True)
+        file_path = os.path.join("data", "echr_segments.csv")
+        result.to_csv(file_path, index=False)
+        logging.info("Segments saved to %s", file_path)
+
+    return result
