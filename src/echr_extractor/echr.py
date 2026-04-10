@@ -291,33 +291,21 @@ def prepare_echr_corpus(df, full_texts):
         corpus = prepare_echr_corpus(df, full_texts)
         # corpus now has a 'fulltext' column ready for segmentation
     """
+    from .segmentation import prepare_segmentation_corpus
+
     if df is False or not full_texts:
         logging.warning("Cannot prepare corpus: invalid input")
         return pd.DataFrame()
 
-    texts_df = pd.DataFrame(full_texts)
-
-    # Handle key naming mismatch: full_texts use 'item_id', metadata uses 'itemid'
-    rename_map = {}
-    if "item_id" in texts_df.columns:
-        rename_map["item_id"] = "itemid"
-    if "full_text" in texts_df.columns:
-        rename_map["full_text"] = "fulltext"
-    if rename_map:
-        texts_df = texts_df.rename(columns=rename_map)
-
-    # Keep only itemid and fulltext to avoid duplicate columns on merge
-    merge_cols = [c for c in ["itemid", "fulltext"] if c in texts_df.columns]
-    texts_df = texts_df[merge_cols]
-
-    merged = df.merge(texts_df, on="itemid", how="left")
-    return merged
+    return prepare_segmentation_corpus(df=df, full_texts=full_texts)
 
 
 def get_echr_segments(
     df=None,
     full_texts=None,
     corpus_df=None,
+    document=None,
+    documents=None,
     save_file="y",
     allowed_langs=("ENG", "FRE"),
     min_segment_length=50,
@@ -325,12 +313,16 @@ def get_echr_segments(
     """Segment ECHR documents into structured legal sections.
 
     Accepts either:
-    - A pre-merged DataFrame with 'fulltext' column (via corpus_df), or
+    - A pre-merged DataFrame with 'fulltext' column (via corpus_df)
     - The separate outputs from get_echr_extra() (via df and full_texts)
+    - A single in-memory document dict/string (via document)
+    - A list of in-memory document dicts (via documents)
 
     :param pd.DataFrame df: Metadata DataFrame from get_echr_extra().
     :param list full_texts: Full-text list from get_echr_extra().
     :param pd.DataFrame corpus_df: Pre-merged DataFrame with 'fulltext' column.
+    :param dict|str document: Single in-memory document or raw text.
+    :param list documents: Sequence of in-memory document dicts.
     :param str save_file: Whether to save results to CSV ("y" or "n", default: "y").
     :param tuple allowed_langs: Language codes to process (default: ('ENG', 'FRE')).
     :param int min_segment_length: Minimum segment length in chars (default: 50).
@@ -346,24 +338,21 @@ def get_echr_segments(
         corpus = prepare_echr_corpus(df, full_texts)
         segments = get_echr_segments(corpus_df=corpus, save_file='n')
     """
-    from .ECHR_text_segmenter import segment_echr_texts
+    from .segmentation import segment_documents
 
-    if corpus_df is not None:
-        input_df = corpus_df
-    elif df is not None and full_texts is not None:
-        input_df = prepare_echr_corpus(df, full_texts)
-    else:
-        logging.error("Provide either corpus_df or both df and full_texts")
+    try:
+        result = segment_documents(
+            corpus_df=corpus_df,
+            df=df,
+            full_texts=full_texts,
+            document=document,
+            documents=documents,
+            allowed_langs=allowed_langs,
+            min_segment_length=min_segment_length,
+        )
+    except ValueError as exc:
+        logging.error("%s", exc)
         return pd.DataFrame()
-
-    if input_df.empty:
-        return pd.DataFrame()
-
-    result = segment_echr_texts(
-        input_df,
-        allowed_langs=allowed_langs,
-        min_segment_length=min_segment_length,
-    )
 
     if save_file == "y":
         Path("data").mkdir(parents=True, exist_ok=True)

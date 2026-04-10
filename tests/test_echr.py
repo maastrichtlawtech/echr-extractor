@@ -4,7 +4,30 @@ from unittest.mock import patch
 
 import pandas as pd
 
-from echr_extractor import get_echr, get_echr_extra, get_nodes_edges
+from echr_extractor import (
+    get_echr,
+    get_echr_extra,
+    get_echr_segments,
+    get_nodes_edges,
+    prepare_segmentation_corpus,
+    segment_document,
+    segment_documents,
+)
+from echr_extractor.echr import prepare_echr_corpus
+from echr_extractor.segmentation import SEGMENT_OUTPUT_COLUMNS
+
+
+STANDARD_JUDGMENT_TEXT = (
+    "HEADER INFO\n\n"
+    "PROCEDURE\n\n"
+    "1. The case originated in an application filed against the State.\n\n"
+    "THE FACTS\n\n"
+    "2. The applicant was born in 1980 and lives in a city.\n\n"
+    "THE LAW\n\n"
+    "3. The Court notes that Article 6 of the Convention applies.\n\n"
+    "FOR THESE REASONS, THE COURT\n\n"
+    "Holds that there has been a violation of Article 6.\n"
+)
 
 
 class TestGetECHR:
@@ -178,3 +201,161 @@ class TestParameterValidation:
             result = get_echr(save_file="n")
             assert isinstance(result, pd.DataFrame)
             assert len(result) == 0
+
+
+class TestSegmentationWorkflow:
+    """Test the package-level segmentation workflow helpers."""
+
+    def test_prepare_echr_corpus_merges_full_texts(self):
+        df = pd.DataFrame(
+            {
+                "itemid": ["001-1"],
+                "ecli": ["ECLI:ORIGINAL"],
+                "languageisocode": ["ENG"],
+                "doctype": ["HEJUD"],
+            }
+        )
+        full_texts = [
+            {
+                "item_id": "001-1",
+                "ecli": "ECLI:FULLTEXT",
+                "full_text": STANDARD_JUDGMENT_TEXT,
+            }
+        ]
+
+        result = prepare_echr_corpus(df, full_texts)
+
+        assert len(result) == 1
+        assert result.iloc[0]["fulltext"] == STANDARD_JUDGMENT_TEXT
+        assert result.columns.tolist().count("ecli") == 1
+        assert result.iloc[0]["ecli"] == "ECLI:ORIGINAL"
+
+    def test_prepare_echr_corpus_empty_inputs_return_empty_dataframe(self):
+        result = prepare_echr_corpus(False, None)
+
+        assert isinstance(result, pd.DataFrame)
+        assert len(result) == 0
+
+    def test_prepare_segmentation_corpus_supports_document_input(self):
+        corpus = prepare_segmentation_corpus(document=STANDARD_JUDGMENT_TEXT)
+
+        assert corpus.iloc[0]["itemid"] == "doc-1"
+        assert corpus.iloc[0]["languageisocode"] == "ENG"
+        assert corpus.iloc[0]["fulltext"] == STANDARD_JUDGMENT_TEXT
+
+    def test_prepare_segmentation_corpus_normalizes_language_keys_before_merge(self):
+        metadata_df = pd.DataFrame(
+            {
+                "itemid": ["001-1"],
+                "languageisocode": ["ENG"],
+                "doctype": ["HEJUD"],
+            }
+        )
+        full_texts = [
+            {
+                "item_id": "001-1",
+                "languageisocode": "eng",
+                "full_text": STANDARD_JUDGMENT_TEXT,
+            }
+        ]
+
+        corpus = prepare_segmentation_corpus(df=metadata_df, full_texts=full_texts)
+
+        assert corpus.iloc[0]["languageisocode"] == "ENG"
+        assert corpus.iloc[0]["fulltext"] == STANDARD_JUDGMENT_TEXT
+
+    def test_prepare_segmentation_corpus_falls_back_to_itemid_when_language_match_is_unavailable(self):
+        metadata_df = pd.DataFrame(
+            {
+                "itemid": ["001-1"],
+                "languageisocode": ["ENG"],
+                "doctype": ["HEJUD"],
+            }
+        )
+        full_texts = [
+            {
+                "item_id": "001-1",
+                "languageisocode": "FRE",
+                "full_text": STANDARD_JUDGMENT_TEXT,
+            }
+        ]
+
+        corpus = prepare_segmentation_corpus(df=metadata_df, full_texts=full_texts)
+
+        assert corpus.iloc[0]["fulltext"] == STANDARD_JUDGMENT_TEXT
+
+    def test_segment_document_returns_package_shaped_record(self):
+        result = segment_document(
+            text=STANDARD_JUDGMENT_TEXT,
+            itemid="001-1",
+            languageisocode="ENG",
+        )
+
+        assert list(result.keys()) == SEGMENT_OUTPUT_COLUMNS
+        assert result["itemid"] == "001-1"
+        assert result["parser_mode"] == "standard"
+        assert result["procedure"] is not None
+        assert result["facts"] is not None
+        assert result["law"] is not None
+        assert result["operative"] is not None
+        assert result["error"] is None
+
+    def test_segment_documents_supports_dataframe_workflow(self):
+        metadata_df = pd.DataFrame(
+            {
+                "itemid": ["001-1"],
+                "languageisocode": ["ENG"],
+                "doctype": ["HEJUD"],
+                "doctypebranch": ["CHAMBER"],
+            }
+        )
+        full_texts = [{"item_id": "001-1", "full_text": STANDARD_JUDGMENT_TEXT}]
+
+        result = segment_documents(df=metadata_df, full_texts=full_texts)
+
+        assert list(result.columns) == SEGMENT_OUTPUT_COLUMNS
+        assert len(result) == 1
+        assert result.iloc[0]["parser_mode"] == "standard"
+        assert result.iloc[0]["num_sections"] >= 4
+
+    def test_segment_documents_supports_premerged_corpus_dataframe(self):
+        corpus_df = pd.DataFrame(
+            {
+                "itemid": ["001-1"],
+                "languageisocode": ["ENG"],
+                "ecli": ["ECLI:CE:ECHR:2024:TEST"],
+                "doctype": ["HEJUD"],
+                "doctypebranch": ["CHAMBER"],
+                "fulltext": [STANDARD_JUDGMENT_TEXT],
+            }
+        )
+
+        result = segment_documents(corpus_df=corpus_df)
+
+        assert len(result) == 1
+        assert result.iloc[0]["ecli"] == "ECLI:CE:ECHR:2024:TEST"
+        assert result.iloc[0]["procedure"] is not None
+
+    def test_get_echr_segments_supports_document_input(self):
+        result = get_echr_segments(document=STANDARD_JUDGMENT_TEXT, save_file="n")
+
+        assert len(result) == 1
+        assert result.iloc[0]["itemid"] == "doc-1"
+        assert result.iloc[0]["parser_mode"] == "standard"
+
+    def test_get_echr_segments_forwards_allowed_langs(self):
+        corpus = pd.DataFrame(
+            {
+                "itemid": ["001-1"],
+                "languageisocode": ["DEU"],
+                "fulltext": [STANDARD_JUDGMENT_TEXT],
+            }
+        )
+
+        result = get_echr_segments(
+            corpus_df=corpus,
+            save_file="n",
+            allowed_langs=("ENG",),
+        )
+
+        assert result.iloc[0]["parser_mode"] == "skipped_language"

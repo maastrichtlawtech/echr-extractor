@@ -1,0 +1,40 @@
+Note d’information sur la jurisprudence de la Cour 256
+
+Novembre 2021
+
+Särgava c. Estonie - 698/19
+
+Arrêt 16.11.2021 [Section III]
+
+Article 8
+
+Article 8-1
+
+Respect de la correspondance
+
+Garanties procédurales insuffisantes pour protéger des données couvertes par le secret professionnel lors de la saisie puis de l’examen de l’ordinateur et du téléphone portables d’un avocat : violation
+
+En fait – L’ordinateur et le téléphone portables du requérant, avocat de profession, furent saisis à son domicile et dans sa voiture et leur contenu fut ultérieurement examiné par les autorités dans le cadre d’une procédure pénale.
+
+Le requérant forma en vain des recours en vue de faire déclarer la saisie illégale et d’empêcher l’utilisation d’éléments extraits de ses supports de données comme moyens de preuve dans le cadre de la procédure pénale.
+
+Invoquant le secret professionnel des avocats et l’inviolabilité des supports de données relatifs à des services juridiques, le requérant se plaint que la saisie de ses ordinateur et téléphone portables et l’examen ultérieur de leur contenu ont porté atteinte aux droits que lui garantit l’article 8 de la Convention.
+
+En droit – Article 8 :
+
+La saisie des supports de données du requérant et l’examen ultérieur de leur contenu ont constitué une ingérence dans l’exercice de son droit au respect de sa correspondance. La Cour laisse ouverte la question de savoir si le droit interne satisfaisait ou non aux exigences de clarté et de prévisibilité puisque, quoi qu’il en soit, il ne prévoyait pas de garanties procédurales suffisantes pour empêcher des atteintes arbitraires ou disproportionnées au secret professionnel des avocats.
+
+Il semble que le droit interne ne contienne pas de procédure ni de garanties spécifiques s’appliquant à l’examen de supports électroniques de données et empêchant que les communications couvertes par le secret professionnel des avocats ne soient entravées. Le mandat de perquisition ne faisait pas référence à la protection d’éventuels éléments couverts par le secret professionnel. De plus, la décision de savoir s’il fallait entreprendre une recherche fondée sur des mots clés (ou utiliser une autre méthode de criblage), ainsi que le choix des mots clés pertinents (dont certains avaient une portée très large) étaient entièrement laissés à la discrétion des autorités d’enquête. Le droit interne ne prévoyait pas le droit pour le requérant d’être présent pendant la recherche fondée sur des mots clés et ne contenait, semble-t-il, aucune règle spécifique sur la procédure à suivre pour contester la saisie ou l’examen du contenu des supports de données sur la base de la confidentialité de la relation avocat-client.
+
+La Cour ne voit rien qui lui permette de décider si la confidentialité de la relation avocat-client a en réalité été mise à mal en l’espèce. Toutefois, l’absence de garanties procédurales concernant spécifiquement la protection du secret professionnel des avocats suffit à faire conclure à un manquement aux exigences découlant du critère selon lequel une ingérence doit être « prévue par la loi » au sens de l’article 8 § 2.
+
+Conclusion : violation (quatre voix contre trois).
+
+Article 41 : demande pour préjudice moral rejetée.
+
+(Voir aussi Smirnov c. Russie , 71362/01, 7 juin 2007, Résumé juridique ; Wieser et Bicos Beteiligungen GmbH c. Autriche , 74336/01, 16 octobre 2007, Résumé juridique ; Robathin c. Autriche , 30457/06, 3 juillet 2012, Résumé juridique ; Vinci Construction et GTM Génie Civil et Services c. France , 63629/10 et 60567/10, 2 avril 2015, Résumé juridique ; Sérvulo & Associados - Sociedade de Advogados, RL et autres c. Portugal , 27013/10, 3 septembre 2015, Résumé juridique )
+
+© Conseil de l’Europe/Cour européenne des droits de l’homme
+Rédigé par le greffe, ce résumé ne lie pas la Cour.
+
+Cliquez ici pour accéder aux Notes d'information sur la jurisprudence
