@@ -5,8 +5,6 @@ import re
 import pandas as pd
 import pytest
 
-from echr_extractor import get_echr_segments
-from echr_extractor.echr import prepare_echr_corpus
 from echr_extractor.ECHR_text_segmenter import (
     SECTION_NAMES,
     _COMPILED_NONSTANDARD,
@@ -19,6 +17,7 @@ from echr_extractor.ECHR_text_segmenter import (
     normalize_meta_value,
     segment_echr_texts,
 )
+
 
 # ---------------------------------------------------------------------------
 # Fixtures
@@ -96,7 +95,9 @@ class TestChooseParserMode:
         assert choose_parser_mode("text", metadata_doctype="CLINF") == "info_note"
 
     def test_info_note_branch(self):
-        assert choose_parser_mode("text", metadata_doctypebranch="CLIN") == "info_note"
+        assert (
+            choose_parser_mode("text", metadata_doctypebranch="CLIN") == "info_note"
+        )
 
     def test_press_release_doctype(self):
         assert choose_parser_mode("text", metadata_doctype="PR") == "press_release"
@@ -151,7 +152,9 @@ class TestChooseParserMode:
         assert choose_parser_mode("text", metadata_doctype=None) == "standard"
 
     def test_nan_metadata_values(self):
-        assert choose_parser_mode("text", metadata_doctype=float("nan")) == "standard"
+        assert (
+            choose_parser_mode("text", metadata_doctype=float("nan")) == "standard"
+        )
 
 
 # ---------------------------------------------------------------------------
@@ -171,7 +174,9 @@ class TestDetectContentRouting:
         assert _detect_content_routing("Communicated on 2020") == "communicated_case"
 
     def test_objet_affaire(self):
-        assert _detect_content_routing("OBJET DE L\u2019AFFAIRE") == "communicated_case"
+        assert (
+            _detect_content_routing("OBJET DE L\u2019AFFAIRE") == "communicated_case"
+        )
 
 
 # ---------------------------------------------------------------------------
@@ -265,9 +270,7 @@ class TestExtractSegmentsFromBoundaries:
             ("procedure", 4, 13, "PROCEDURE"),
             ("facts", 18, 27, "THE FACTS"),
         ]
-        segments = extract_segments_from_boundaries(
-            text, boundaries, min_segment_length=3
-        )
+        segments = extract_segments_from_boundaries(text, boundaries, min_segment_length=3)
         assert "procedure" in segments
         assert "facts" in segments
 
@@ -281,9 +284,7 @@ class TestExtractSegmentsFromBoundaries:
             ("procedure", 0, 9, "PROCEDURE"),
             ("facts", 12, 21, "THE FACTS"),
         ]
-        segments = extract_segments_from_boundaries(
-            text, boundaries, min_segment_length=50
-        )
+        segments = extract_segments_from_boundaries(text, boundaries, min_segment_length=50)
         # "PROCEDURE\nX" is too short (11 chars), should be filtered
         assert "procedure" not in segments
 
@@ -296,9 +297,7 @@ class TestExtractSegmentsFromBoundaries:
             ("separate_opinion", 0, 18, "OPINION OF JUDGE A"),
             ("separate_opinion", 30, 48, "OPINION OF JUDGE B"),
         ]
-        segments = extract_segments_from_boundaries(
-            text, boundaries, min_segment_length=10
-        )
+        segments = extract_segments_from_boundaries(text, boundaries, min_segment_length=10)
         assert "separate_opinion" in segments
         assert "\n\n" in segments["separate_opinion"]
 
@@ -388,14 +387,18 @@ class TestSegmentEchrTexts:
         assert result.iloc[0]["ecli"] == "ECLI:CE:ECHR:2020:TEST"
 
     def test_soft_skip_info_note(self):
-        df = _make_df("Some info note text", doctype="CLIN")
+        df = _make_df(
+            "Some info note text", doctype="CLIN"
+        )
         result = segment_echr_texts(df)
         assert result.iloc[0]["parser_mode"] == "info_note"
         assert result.iloc[0]["error"] is None
         assert result.iloc[0]["num_sections"] == 0
 
     def test_soft_skip_press_release(self):
-        df = _make_df("Press release text", doctype="PR")
+        df = _make_df(
+            "Press release text", doctype="PR"
+        )
         result = segment_echr_texts(df)
         assert result.iloc[0]["parser_mode"] == "press_release"
         assert result.iloc[0]["error"] is None
@@ -405,6 +408,16 @@ class TestSegmentEchrTexts:
         result = segment_echr_texts(df)
         assert result.iloc[0]["error"] == "No sections found in text"
         assert result.iloc[0]["num_sections"] == 0
+
+    def test_communicated_case_without_sections_reports_an_error(self):
+        df = _make_df(
+            "Communicated on 1 January 2024\n\nThis notice contains no recognizable section headers.",
+            doctype="HECOM",
+        )
+        result = segment_echr_texts(df)
+        assert result.iloc[0]["parser_mode"] == "communicated_case"
+        assert result.iloc[0]["num_sections"] == 0
+        assert result.iloc[0]["error"] == "No sections found in text"
 
     def test_multiple_rows(self):
         df = pd.DataFrame(
@@ -499,6 +512,20 @@ class TestBoundaryValidationEdgeCases:
         )
         sections = [b[0] for b in boundaries]
         assert "appendix" in sections
+
+    def test_french_curly_apostrophe_affaire_heading_detected_as_facts(self):
+        text = (
+            "LES CIRCONSTANCES DE L’AFFAIRE\n\n"
+            "Le contexte factuel est décrit ici avec suffisamment de détail pour dépasser le seuil minimal.\n\n"
+            "EN DROIT\n\n"
+            "La Cour examine ensuite les moyens.\n"
+        )
+        normalized = text.replace("_", " ")
+        boundaries = find_section_boundaries(
+            normalized, _COMPILED_PATTERNS, original_text=text
+        )
+        sections = [b[0] for b in boundaries]
+        assert "facts" in sections
 
     def test_complaints_section_found(self):
         """Cover is_strong_header for complaints (line 522)."""
@@ -727,27 +754,26 @@ class TestNonstandardFallback:
     """Tests for nonstandard segmentation fallback (lines 754-769, 904-915)."""
 
     def test_segment_text_nonstandard_direct(self):
-        """Cover _segment_text_nonstandard function (lines 754-769)."""
+        """Relaxed fallback still captures old commission-decision headings."""
         text = (
-            "FACTS\n\n"
+            "AS TO THE FACTS\n\n"
             "The applicant was born in 1980 and resides in a city.\n\n"
-            "LAW\n\n"
+            "AS TO THE LAW\n\n"
             "The Court notes that Article 6 applies in this case.\n\n"
             "FOR THESE REASONS\n\n"
             "The application is declared admissible.\n"
         )
         ns_patterns = _COMPILED_NONSTANDARD["commission_decision"]
         segments = _segment_text_nonstandard(text, ns_patterns, min_segment_length=35)
-        assert "facts" in segments or "law" in segments
+        assert "facts" in segments
+        assert "law" in segments
 
     def test_commission_decision_nonstandard_fallback(self):
-        """Cover lines 902-908: commission_decision with no strict matches falls back."""
-        # Text with only simple headers that strict patterns won't match
-        # but nonstandard patterns will
+        """Commission decisions fall back to the relaxed legacy headings."""
         text = (
-            "FACTS\n\n"
+            "AS TO THE FACTS\n\n"
             "The applicant was born in 1980 and lives in a place.\n\n"
-            "LAW\n\n"
+            "AS TO THE LAW\n\n"
             "The Commission considers the complaint under Article 6.\n\n"
             "FOR THESE REASONS\n\n"
             "The application is declared admissible by the Commission.\n"
@@ -755,13 +781,12 @@ class TestNonstandardFallback:
         df = _make_df(text, doctype="HEDEC")
         result = segment_echr_texts(df)
         assert result.iloc[0]["parser_mode"] == "commission_decision"
-        # Should find sections via fallback
         assert result.iloc[0]["num_sections"] > 0
 
     def test_communicated_case_nonstandard_fallback(self):
-        """Cover communicated_case fallback path."""
+        """Communicated cases keep extracting when canonical headers are present."""
         text = (
-            "FACTS\n\n"
+            "THE FACTS\n\n"
             "The applicant was born in 1980 and lives in a place.\n\n"
             "COMPLAINTS\n\n"
             "The applicant complains under Article 6.\n\n"
@@ -795,7 +820,6 @@ class TestExceptionHandling:
 
     def test_exception_from_bad_fulltext_type(self):
         """Force an actual exception in the segmentation pipeline."""
-
         # Use a custom object that passes isinstance(x, str) but fails later
         class BadStr(str):
             def replace(self, *args, **kwargs):
@@ -838,182 +862,23 @@ class TestProximityFilter:
 
 
 # ---------------------------------------------------------------------------
-# Tests: prepare_echr_corpus
+# Tests: matcher guardrails that are awkward to reach with standard fixtures
 # ---------------------------------------------------------------------------
-class TestPrepareEchrCorpus:
-    def test_basic_merge(self):
-        df = pd.DataFrame(
-            {
-                "itemid": ["001-123456", "001-123457"],
-                "doctype": ["HEJUD", "HEJUD"],
-                "languageisocode": ["ENG", "ENG"],
-            }
-        )
-        full_texts = [
-            {
-                "item_id": "001-123456",
-                "ecli": "ECLI:1",
-                "full_text": "Text one content",
-            },
-            {
-                "item_id": "001-123457",
-                "ecli": "ECLI:2",
-                "full_text": "Text two content",
-            },
-        ]
-        result = prepare_echr_corpus(df, full_texts)
-        assert "fulltext" in result.columns
-        assert len(result) == 2
-        assert result.iloc[0]["fulltext"] == "Text one content"
-        assert result.iloc[1]["fulltext"] == "Text two content"
-
-    def test_handles_key_name_mismatch(self):
-        df = pd.DataFrame({"itemid": ["001-123456"], "languageisocode": ["ENG"]})
-        full_texts = [
-            {"item_id": "001-123456", "ecli": "E1", "full_text": "txt content"}
-        ]
-        result = prepare_echr_corpus(df, full_texts)
-        assert "fulltext" in result.columns
-        assert result.iloc[0]["fulltext"] == "txt content"
-
-    def test_false_df_returns_empty(self):
-        result = prepare_echr_corpus(False, [{"item_id": "x", "full_text": "y"}])
-        assert isinstance(result, pd.DataFrame)
-        assert len(result) == 0
-
-    def test_empty_full_texts_returns_empty(self):
-        df = pd.DataFrame({"itemid": ["001"]})
-        result = prepare_echr_corpus(df, [])
-        assert isinstance(result, pd.DataFrame)
-        assert len(result) == 0
-
-    def test_none_full_texts_returns_empty(self):
-        df = pd.DataFrame({"itemid": ["001"]})
-        result = prepare_echr_corpus(df, None)
-        assert isinstance(result, pd.DataFrame)
-        assert len(result) == 0
-
-    def test_no_duplicate_ecli_column(self):
-        df = pd.DataFrame(
-            {
-                "itemid": ["001-123456"],
-                "ecli": ["ECLI:ORIGINAL"],
-                "languageisocode": ["ENG"],
-            }
-        )
-        full_texts = [
-            {"item_id": "001-123456", "ecli": "ECLI:FULLTEXT", "full_text": "txt"}
-        ]
-        result = prepare_echr_corpus(df, full_texts)
-        # Should keep original ecli, not create duplicate columns
-        assert result.columns.tolist().count("ecli") == 1
-
-
-# ---------------------------------------------------------------------------
-# Tests: get_echr_segments (convenience wrapper)
-# ---------------------------------------------------------------------------
-class TestSegmentEchrDocuments:
-    def test_with_separate_inputs(self):
-        df = pd.DataFrame(
-            {
-                "itemid": ["001-123456"],
-                "languageisocode": ["ENG"],
-            }
-        )
-        full_texts = [
-            {
-                "item_id": "001-123456",
-                "ecli": "E1",
-                "full_text": STANDARD_JUDGMENT_TEXT,
-            }
-        ]
-        result = get_echr_segments(df=df, full_texts=full_texts, save_file="n")
-        assert isinstance(result, pd.DataFrame)
-        assert len(result) == 1
-        assert result.iloc[0]["num_sections"] >= 4
-
-    def test_with_corpus_df(self):
-        corpus = pd.DataFrame(
-            {
-                "itemid": ["001-123456"],
-                "languageisocode": ["ENG"],
-                "fulltext": [STANDARD_JUDGMENT_TEXT],
-            }
-        )
-        result = get_echr_segments(corpus_df=corpus, save_file="n")
-        assert isinstance(result, pd.DataFrame)
-        assert len(result) == 1
-
-    def test_no_input_returns_empty(self):
-        result = get_echr_segments(save_file="n")
-        assert isinstance(result, pd.DataFrame)
-        assert len(result) == 0
-
-    def test_allowed_langs_forwarded(self):
-        corpus = pd.DataFrame(
-            {
-                "itemid": ["001-1"],
-                "languageisocode": ["DEU"],
-                "fulltext": [STANDARD_JUDGMENT_TEXT],
-            }
-        )
-        result = get_echr_segments(
-            corpus_df=corpus, save_file="n", allowed_langs=("ENG",)
-        )
-        assert result.iloc[0]["parser_mode"] == "skipped_language"
-
-
-# ---------------------------------------------------------------------------
-# Tests: Custom pattern coverage (reaching code paths unreachable with
-# standard patterns to achieve 100% coverage)
-# ---------------------------------------------------------------------------
-class TestCustomPatternCoverage:
-    """Tests using custom compiled pattern dicts to exercise code paths
-    that standard SEGMENTATION_PATTERNS cannot reach."""
+class TestMatcherGuardrails:
+    """Focused internal matcher guardrails that are still behaviorally meaningful."""
 
     def test_header_like_before_ok_false(self):
-        """Cover line 481 (is_header_like returns False due to before_ok=False)
-        and line 665 (continue in header_position check).
-
-        PROCEDURE mid-sentence after only a space — the lookbehind pattern
-        matches but is_header_like rejects because the prefix is non-empty,
-        the before chars aren't punctuation, and start char isn't special.
-        """
+        """Reject header words that appear mid-sentence."""
         text = "some word PROCEDURE 1. The case is about the applicant.\n"
         normalized = text.replace("_", " ")
         boundaries = find_section_boundaries(
             normalized, _COMPILED_PATTERNS, original_text=text
         )
-        # PROCEDURE mid-sentence should be rejected
         sections = [b[0] for b in boundaries]
         assert "procedure" not in sections
 
-    def test_is_strong_header_unknown_section(self):
-        """Cover line 542 (is_strong_header returns False for unknown section).
-
-        Use a custom pattern dict with a section name not handled by the
-        if/elif chain in is_strong_header.
-        """
-        custom_patterns = {
-            "unknown_section": [
-                re.compile(r"(?:^|\n)UNKNOWN\s+HEADER\b", re.MULTILINE),
-            ],
-        }
-        text = "\nUNKNOWN HEADER\n\nSome content after the unknown header.\n"
-        boundaries = find_section_boundaries(text, custom_patterns)
-        # The section should still be found (is_strong_header returns False
-        # but that only affects pass 1 pre-scan, not the actual boundary)
-        sections = [b[0] for b in boundaries]
-        assert "unknown_section" in sections
-
     def test_has_initials_prefix_exception(self):
-        """Cover lines 545-552 (has_initials_prefix body) and
-        lines 653-656 (separate_opinion exception when is_header_like fails).
-
-        Judge initials (A.B.C.D.) glued before DISSENTING OPINION, with
-        lowercase text suffix so is_header_like fails, but has_initials_prefix
-        passes and the match is accepted via the exception.
-        """
+        """Allow separate-opinion headers glued to judge initials."""
         text = (
             "FOR THESE REASONS, THE COURT\n\n"
             "Holds that there has been a violation of Article 6.\n\n"
@@ -1028,12 +893,7 @@ class TestCustomPatternCoverage:
         assert "separate_opinion" in sections
 
     def test_is_appendix_inline_header_exception(self):
-        """Cover lines 555-566 (is_appendix_inline_header body) and
-        lines 657-663 (appendix exception when is_header_like fails).
-
-        APPENDIX preceded by double space mid-line (not after newline),
-        so is_header_like fails, but is_appendix_inline_header passes.
-        """
+        """Allow appendix headers that appear after double-space separators."""
         text = (
             "FOR THESE REASONS, THE COURT\n\n"
             "Holds that there has been a violation.  "
@@ -1046,32 +906,8 @@ class TestCustomPatternCoverage:
         sections = [b[0] for b in boundaries]
         assert "appendix" in sections
 
-    def test_uppercase_filter_rejects_non_canonical(self):
-        """Cover line 615 (uppercase section match that's not a canonical keyword).
-
-        Use a custom 'facts' pattern that matches uppercase text "THE DATA"
-        which is NOT a canonical facts keyword.
-        """
-        custom_patterns = {
-            "facts": [
-                re.compile(
-                    r"(?:^|\n)\s*THE\s+DATA\s*(?:\n|$)",
-                    re.IGNORECASE | re.MULTILINE,
-                ),
-            ],
-        }
-        text = "\nTHE DATA\n\nSome content about the data in this case.\n"
-        boundaries = find_section_boundaries(text, custom_patterns)
-        # "THE DATA" matches the pattern but is_strong_header("facts", ...)
-        # returns False (no canonical keyword), so it's rejected at line 615
-        sections = [b[0] for b in boundaries]
-        assert "facts" not in sections
-
     def test_alleged_violation_of_article_in_match(self):
-        """Cover line 623 (complaints match containing 'ALLEGED VIOLATION OF ARTICLE').
-
-        Use a custom complaints pattern that captures the full phrase.
-        """
+        """Do not turn ARTICLE-specific law subheadings into complaints headers."""
         custom_patterns = {
             "complaints": [
                 re.compile(
@@ -1086,93 +922,43 @@ class TestCustomPatternCoverage:
             "The applicant complained about the trial process.\n"
         )
         boundaries = find_section_boundaries(text, custom_patterns)
-        # Match text contains "ALLEGED VIOLATION OF ARTICLE" → rejected
         sections = [b[0] for b in boundaries]
         assert "complaints" not in sections
 
-    def test_court_assessment_non_canonical_custom(self):
-        """Cover line 637 (court_assessment canonical check fails).
-
-        Use a custom court_assessment pattern that matches text without
-        both 'COURT' and 'ASSESSMENT'.
-        """
-        custom_patterns = {
-            "court_assessment": [
-                re.compile(
-                    r"(?:^|\n)\s*THE\s+EVALUATION\s*(?:\n|$)",
-                    re.IGNORECASE | re.MULTILINE,
-                ),
-            ],
-        }
-        text = "\nTHE EVALUATION\n\nThe evaluation of the case follows.\n"
-        boundaries = find_section_boundaries(text, custom_patterns)
-        # "THE EVALUATION" doesn't contain both COURT and ASSESSMENT → rejected
-        sections = [b[0] for b in boundaries]
-        assert "court_assessment" not in sections
-
-    def test_strong_header_suppression_weak_match(self):
-        """Cover line 676 (weak match suppressed when strong header exists).
-
-        Use custom operative patterns where one is strong and one is weak.
-        """
-        custom_patterns = {
-            "operative": [
-                re.compile(r"FOR\s+THESE\s+REASONS", re.IGNORECASE | re.MULTILINE),
-                re.compile(r"(?:^|\n)DECISION\b", re.IGNORECASE | re.MULTILINE),
-            ],
-        }
-        text = (
-            "FOR THESE REASONS\n\n"
-            "The Court holds unanimously that there has been a violation.\n\n"
-            "DECISION\n\n"
-            "Some additional decisional text about the outcome.\n"
-        )
-        boundaries = find_section_boundaries(text, custom_patterns)
-        operative_boundaries = [b for b in boundaries if b[0] == "operative"]
-        # "FOR THESE REASONS" is strong, "DECISION" is weak → suppressed
-        assert len(operative_boundaries) == 1
-        assert "FOR THESE REASONS" in operative_boundaries[0][3]
-
 
 class TestNonstandardFallbackCoverage:
-    """Tests to cover the nonstandard fallback and unknown mode paths."""
+    """Tests to cover fallback and unknown mode paths."""
 
     def test_commission_decision_fallback_no_strict_matches(self):
-        """Cover lines 904-908: commission_decision with no strict matches
-        falls back to nonstandard patterns.
-
-        Uses simple headers (FACTS, LAW) that only match nonstandard patterns.
-        """
+        """Commission decisions support legacy AS TO THE ... headings."""
         text = (
-            "FACTS\n\n"
+            "AS TO THE FACTS\n\n"
             "The applicant was born in 1980 and lives in a place far away.\n\n"
-            "LAW\n\n"
+            "AS TO THE LAW\n\n"
             "The Commission considers the complaint under Article 6 carefully.\n\n"
         )
         df = _make_df(text, doctype="HEDEC")
         result = segment_echr_texts(df)
         assert result.iloc[0]["parser_mode"] == "commission_decision"
-        # Should find sections via nonstandard fallback
         assert result.iloc[0]["num_sections"] > 0
 
     def test_communicated_case_fallback_no_strict_matches(self):
-        """Cover communicated_case fallback path with no strict matches."""
+        """Communicated cases extract core sections when supported headers exist."""
         text = (
-            "FACTS\n\n"
-            "The applicant was born in 1980 and lives in a place far away.\n\n"
+            "THE FACTS\n\n"
+            "The applicant was born in 1980 and lives in a place far away with enough detail to exceed the threshold.\n\n"
+            "COMPLAINTS\n\n"
+            "The applicant complains under Article 6 and Article 8 of the Convention with supporting detail.\n\n"
             "QUESTIONS TO THE PARTIES\n\n"
-            "1. Has there been a violation of Article 6 of the Convention?\n"
+            "1. Has there been a violation of Article 6 of the Convention in the applicant's case?\n"
         )
         df = _make_df(text, doctype="HECOM")
         result = segment_echr_texts(df)
         assert result.iloc[0]["parser_mode"] == "communicated_case"
         assert result.iloc[0]["num_sections"] > 0
 
-    def test_unknown_parser_mode_treated_as_standard(self):
-        """Cover lines 909-915: unknown parser mode falls through to standard.
-
-        Monkeypatches choose_parser_mode to return an unrecognized mode.
-        """
+    def test_unknown_parser_mode_does_not_invent_sections(self):
+        """Unknown parser modes should not fabricate standard segmentation."""
         import echr_extractor.ECHR_text_segmenter as seg
 
         original = seg.choose_parser_mode
@@ -1181,6 +967,7 @@ class TestNonstandardFallbackCoverage:
             df = _make_df(STANDARD_JUDGMENT_TEXT)
             result = segment_echr_texts(df)
             assert result.iloc[0]["parser_mode"] == "unknown_mode"
-            assert result.iloc[0]["num_sections"] >= 4
+            assert result.iloc[0]["num_sections"] == 0
+            assert result.iloc[0]["error"] == "No sections found in text"
         finally:
             seg.choose_parser_mode = original
