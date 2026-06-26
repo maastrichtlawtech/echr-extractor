@@ -8,6 +8,11 @@ from .echr import (
     get_echr_segments,
     get_nodes_edges,
 )
+from .segmentation import (
+    prepare_segmentation_corpus,
+    segment_document,
+    segment_documents,
+)
 
 try:
     from ._version import version as __version__
@@ -26,4 +31,7 @@ __all__ = [
     "get_echr_extra",
     "get_echr_segments",
     "get_nodes_edges",
+    "prepare_segmentation_corpus",
+    "segment_document",
+    "segment_documents",
 ]
