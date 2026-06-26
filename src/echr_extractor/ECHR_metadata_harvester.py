@@ -195,6 +195,7 @@ def link_to_query(link):
         "kpthesaurus": basic_function,
         "advopidentifier": basic_function,
         "documentcollectionid2": basic_function,
+        "itemid": basic_function,
         "fulltext": full_text_function,
         "kpdate": date_function,
         "bodyprocedure": advanced_function,
@@ -246,6 +247,9 @@ def link_to_query(link):
         else:
             vals = link_dictionary.get(key)
             funct = query_map.get(key)
+            if funct is None:
+                print(f"Skipping unsupported query key: {key}")
+                continue
             query_elements.append(funct(key, vals))
     if date_addition:
         query_elements.append(date_addition)
