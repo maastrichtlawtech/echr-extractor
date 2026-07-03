@@ -126,6 +126,26 @@ class TestGetECHRExtra:
 
     @patch("echr_extractor.echr.download_full_text_main")
     @patch("echr_extractor.echr.get_echr_metadata")
+    def test_get_echr_extra_saved_filenames_match_get_echr(
+        self, mock_get_metadata, mock_download_text, tmp_path, monkeypatch
+    ):
+        """Regression: with count=N, get_echr_extra used to save files
+        named 0-ALL while get_echr saved 0-N for the same parameters."""
+        monkeypatch.chdir(tmp_path)
+        mock_get_metadata.return_value = pd.DataFrame(
+            {"itemid": ["001-1", "001-2"]}
+        )
+        mock_download_text.return_value = [{"itemid": "001-1", "text": "t"}]
+
+        get_echr_extra(count=2, save_file="y")
+
+        assert (tmp_path / "data" / "echr_metadata_0-2_dates_START-END.csv").exists()
+        assert (
+            tmp_path / "data" / "echr_full_text_0-2_dates_START-END.json"
+        ).exists()
+
+    @patch("echr_extractor.echr.download_full_text_main")
+    @patch("echr_extractor.echr.get_echr_metadata")
     def test_get_echr_extra_metadata_failure(
         self, mock_get_metadata, mock_download_text
     ):
@@ -229,6 +249,27 @@ class TestSegmentationWorkflow:
         assert result.iloc[0]["fulltext"] == STANDARD_JUDGMENT_TEXT
         assert result.columns.tolist().count("ecli") == 1
         assert result.iloc[0]["ecli"] == "ECLI:ORIGINAL"
+
+    def test_prepare_echr_corpus_preserves_metadata_columns(self):
+        """Regression: the docstring promises 'metadata columns plus
+        fulltext', but extra columns used to be dropped in the merge."""
+        df = pd.DataFrame(
+            {
+                "itemid": ["001-1"],
+                "ecli": ["ECLI:X"],
+                "languageisocode": ["ENG"],
+                "appno": ["123/45"],
+                "article": ["6"],
+                "scl": ["Some v. Case, 1 January 2000"],
+            }
+        )
+        full_texts = [{"item_id": "001-1", "full_text": STANDARD_JUDGMENT_TEXT}]
+
+        result = prepare_echr_corpus(df, full_texts)
+
+        assert set(df.columns) <= set(result.columns)
+        assert result.iloc[0]["appno"] == "123/45"
+        assert result.iloc[0]["scl"] == "Some v. Case, 1 January 2000"
 
     def test_prepare_echr_corpus_empty_inputs_return_empty_dataframe(self):
         result = prepare_echr_corpus(False, None)

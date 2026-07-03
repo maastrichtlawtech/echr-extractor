@@ -3,7 +3,13 @@
 import argparse
 import sys
 
-from . import get_echr, get_echr_extra, get_echr_segments, get_nodes_edges
+from . import (
+    get_document_citations,
+    get_echr,
+    get_echr_extra,
+    get_echr_segments,
+    get_nodes_edges,
+)
 
 
 def main() -> None:
@@ -39,6 +45,27 @@ def main() -> None:
     )
     network_parser.add_argument(
         "--no-save", action="store_true", help="Don't save files, return objects only"
+    )
+    network_parser.add_argument(
+        "--resolve-external",
+        action="store_true",
+        help="Resolve references pointing outside the corpus via HUDOC",
+    )
+
+    # Single-document citations command
+    citations_parser = subparsers.add_parser(
+        "citations", help="List and resolve the out-citations of one document"
+    )
+    citations_parser.add_argument(
+        "--itemid", type=str, required=True, help="HUDOC itemid of the document"
+    )
+    citations_parser.add_argument(
+        "--no-resolve",
+        action="store_true",
+        help="Only parse the citations, do not resolve them against HUDOC",
+    )
+    citations_parser.add_argument(
+        "--no-save", action="store_true", help="Don't save files, print summary only"
     )
 
     # Segmentation command
@@ -105,11 +132,37 @@ def main() -> None:
 
         elif args.command == "network":
             nodes, edges, missing_df = get_nodes_edges(
-                metadata_path=args.metadata_path, save_file="n" if args.no_save else "y"
+                metadata_path=args.metadata_path,
+                save_file="n" if args.no_save else "y",
+                resolve_external=args.resolve_external,
             )
             print(f"Generated {len(nodes)} nodes and {len(edges)} edges")
             if missing_df is not None and len(missing_df) > 0:
                 print(f"Found {len(missing_df)} missing references")
+
+        elif args.command == "citations":
+            result = get_document_citations(
+                itemid=args.itemid, resolve=not args.no_resolve
+            )
+            resolved_count = (
+                result["resolved_id"].notna().sum()
+                if "resolved_id" in result.columns
+                else 0
+            )
+            print(
+                f"Found {len(result)} citations for {args.itemid} "
+                f"({resolved_count} resolved)"
+            )
+            if not args.no_save and len(result) > 0:
+                import os as os_mod
+                from pathlib import Path as Path_mod
+
+                Path_mod("data").mkdir(parents=True, exist_ok=True)
+                out = os_mod.path.join(
+                    "data", f"echr_citations_{args.itemid}.csv"
+                )
+                result.to_csv(out, index=False)
+                print(f"Saved to {out}")
 
         elif args.command == "segment":
             import json as json_mod

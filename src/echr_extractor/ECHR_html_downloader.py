@@ -1,3 +1,4 @@
+import logging
 import re
 import threading
 
@@ -98,7 +99,9 @@ def download_full_text_separate(item_ids, eclis, dict_list):
             item_id = item_ids[i]
             ecli = eclis[i]
             try:
-                r = requests.get(base_url + item_id, timeout=1)
+                r = requests.get(base_url + item_id, timeout=10)
+                # An error page must not be stored as the document text
+                r.raise_for_status()
                 json_dict = {
                     "item_id": item_id,
                     "ecli": ecli,
@@ -111,5 +114,16 @@ def download_full_text_separate(item_ids, eclis, dict_list):
         return retry_ids, retry_eclis
 
     retry_ids, retry_eclis = download_html(item_ids, eclis)
-    download_html(retry_ids, retry_eclis)
+    failed_ids, _ = download_html(retry_ids, retry_eclis)
+    if failed_ids:
+        logging.warning(
+            f"Full text could not be downloaded for {len(failed_ids)} "
+            f"document(s): {failed_ids}"
+        )
+    empty_ids = [d["item_id"] for d in full_list if not d["full_text"]]
+    if empty_ids:
+        logging.warning(
+            f"No HTML text available (kept with empty full_text) for "
+            f"{len(empty_ids)} document(s): {empty_ids}"
+        )
     dict_list.append(full_list)

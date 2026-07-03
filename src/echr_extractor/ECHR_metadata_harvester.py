@@ -79,7 +79,9 @@ def get_date_ranges(start_date, end_date, days_per_batch=365):
     date_ranges = []
     current_start = start_dt
 
-    while current_start < end_dt:
+    # <= so a remainder of exactly one day (or a single-day range) still
+    # produces a batch instead of being silently dropped.
+    while current_start <= end_dt:
         current_end = min(current_start + timedelta(days=days_per_batch - 1), end_dt)
         date_ranges.append(
             (current_start.strftime("%Y-%m-%d"), current_end.strftime("%Y-%m-%d"))
@@ -87,6 +89,36 @@ def get_date_ranges(start_date, end_date, days_per_batch=365):
         current_start = current_end + timedelta(days=1)
 
     return date_ranges
+
+
+# HUDOC's search backend refuses to page past this many results within a
+# single query: any request with start+length above it returns zero rows.
+# Larger result sets must be partitioned into date windows.
+HUDOC_MAX_RESULTS_PER_QUERY = 10000
+
+
+def split_date_range(start_date, end_date):
+    """Bisect a date range into two halves for query partitioning.
+
+    Open ends default to 1900-01-01 / today. Returns a list of two
+    (start, end) tuples, or None when the range is a single day and
+    cannot be split further.
+    """
+    start_dt = datetime.strptime(start_date or "1900-01-01", "%Y-%m-%d")
+    end_str = end_date or datetime.today().date().strftime("%Y-%m-%d")
+    end_dt = datetime.strptime(end_str, "%Y-%m-%d")
+
+    if start_dt >= end_dt:
+        return None
+
+    mid_dt = start_dt + (end_dt - start_dt) / 2
+    return [
+        (start_dt.strftime("%Y-%m-%d"), mid_dt.strftime("%Y-%m-%d")),
+        (
+            (mid_dt + timedelta(days=1)).strftime("%Y-%m-%d"),
+            end_dt.strftime("%Y-%m-%d"),
+        ),
+    ]
 
 
 def basic_function(term, values):
@@ -248,8 +280,15 @@ def link_to_query(link):
             vals = link_dictionary.get(key)
             funct = query_map.get(key)
             if funct is None:
-                print(f"Skipping unsupported query key: {key}")
-                continue
+                # Keys not in query_map (e.g. article, respondent, violation)
+                # are still valid HUDOC field filters; fall back to the basic
+                # (key="value") form so the filter is applied rather than
+                # silently dropped.
+                logging.warning(
+                    f"Query key '{key}' not explicitly mapped, "
+                    "applying basic field filter"
+                )
+                funct = basic_function
             query_elements.append(funct(key, vals))
     if date_addition:
         query_elements.append(date_addition)
@@ -274,6 +313,7 @@ def determine_meta_url(link, query_payload, start_date, end_date):
         META_URL = (
             "http://hudoc.echr.coe.int/app/query/results"
             "?query=(contentsitename=ECHR) AND "
+            "(NOT (doctype=PR OR doctype=HFCOMOLD OR doctype=HECOMOLD)) AND "
             '(documentcollectionid2:"JUDGMENTS" OR '
             'documentcollectionid2:"COMMUNICATEDCASES" OR '
             'documentcollectionid2:"DECISIONS" OR '
@@ -430,10 +470,21 @@ def get_echr_metadata(
     total_processed = 0
     total_failed = 0
 
-    for batch_idx, (batch_start_date, batch_end_date) in enumerate(date_ranges):
+    # Queries whose result set exceeds HUDOC's pagination cap must be
+    # partitioned by date; link/query_payload queries cannot be safely
+    # rewritten, so those can only warn.
+    can_partition = not link and not query_payload
+    pending_ranges = list(date_ranges)
+    batch_idx = 0
+    first_fetch = True
+
+    while pending_ranges:
+        batch_start_date, batch_end_date = pending_ranges.pop(0)
         if verbose:
             logging.info(
-                f"Processing date batch {batch_idx + 1}/{len(date_ranges)}: {batch_start_date} to {batch_end_date}"
+                f"Processing date batch {batch_idx + 1} "
+                f"({len(pending_ranges)} pending): "
+                f"{batch_start_date} to {batch_end_date}"
             )
 
         # Determine meta URL for this batch
@@ -462,6 +513,7 @@ def get_echr_metadata(
         if r is None:
             logging.error(f"Failed to get result count for batch {batch_idx + 1}")
             total_failed += 1
+            batch_idx += 1
             continue
 
         try:
@@ -471,16 +523,56 @@ def get_echr_metadata(
         except (KeyError, ValueError) as e:
             logging.error(f"Failed to parse result count: {e}")
             total_failed += 1
+            batch_idx += 1
             continue
 
         if resultcount == 0:
             if verbose:
                 logging.info(f"No results found for batch {batch_idx + 1}")
+            batch_idx += 1
             continue
 
-        # Determine actual end_id for this batch
-        batch_end_id = min(end_id, resultcount) if end_id else resultcount
-        batch_start_id = start_id if batch_idx == 0 else 0
+        # HUDOC refuses to page past HUDOC_MAX_RESULTS_PER_QUERY within a
+        # single query, so a window with more results than that must be
+        # bisected into smaller date windows (requests beyond the cap
+        # would silently return zero rows).
+        if resultcount > HUDOC_MAX_RESULTS_PER_QUERY:
+            halves = (
+                split_date_range(batch_start_date, batch_end_date)
+                if can_partition
+                else None
+            )
+            if halves:
+                if verbose:
+                    logging.info(
+                        f"{resultcount} results exceed the HUDOC limit of "
+                        f"{HUDOC_MAX_RESULTS_PER_QUERY} per query; splitting "
+                        f"window into {halves[0]} and {halves[1]}"
+                    )
+                pending_ranges = halves + pending_ranges
+                continue
+            logging.warning(
+                f"HUDOC returns at most {HUDOC_MAX_RESULTS_PER_QUERY} "
+                f"results per query but {resultcount} match; only the "
+                f"first {HUDOC_MAX_RESULTS_PER_QUERY} can be fetched. "
+                "Narrow the query (e.g. add kpdate bounds) to retrieve "
+                "the rest."
+            )
+            resultcount = HUDOC_MAX_RESULTS_PER_QUERY
+
+        # Determine actual end_id for this batch. end_id caps the TOTAL
+        # number of records across all date batches, not per batch —
+        # otherwise count=N over a multi-batch date range would fetch up
+        # to N records per batch.
+        batch_start_id = start_id if first_fetch else 0
+        first_fetch = False
+        if end_id:
+            remaining = (end_id - start_id) - total_processed
+            if remaining <= 0:
+                break
+            batch_end_id = min(resultcount, batch_start_id + remaining)
+        else:
+            batch_end_id = resultcount
 
         if verbose:
             msg = f"Fetching {batch_end_id - batch_start_id} results from index {batch_start_id} to {batch_end_id}"
@@ -497,7 +589,7 @@ def get_echr_metadata(
         if progress_bar and (batch_end_id - batch_start_id) > batch_size:
             pbar = tqdm(
                 total=batch_end_id - batch_start_id,
-                desc=f"Batch {batch_idx + 1}/{len(date_ranges)}",
+                desc=f"Batch {batch_idx + 1}",
                 unit="records",
                 leave=False,
             )
@@ -549,6 +641,7 @@ def get_echr_metadata(
             logging.info(
                 f"Batch {batch_idx + 1} completed: {batch_processed} processed, {batch_failed} failed"
             )
+        batch_idx += 1
 
     # Final summary
     if verbose:
