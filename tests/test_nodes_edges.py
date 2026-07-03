@@ -5,7 +5,6 @@ Live end-to-end network construction is covered in test_live_hudoc.py.
 """
 
 import pandas as pd
-import pytest
 
 from echr_extractor.ECHR_nodes_edges_list_transform import (
     echr_nodes_edges,

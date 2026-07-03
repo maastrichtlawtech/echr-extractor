@@ -255,8 +255,80 @@ def get_echr_extra(
         return df, json_list
 
 
-def get_nodes_edges(metadata_path=None, df=None, save_file="y"):
+def get_nodes_edges(
+    metadata_path=None,
+    df=None,
+    save_file="y",
+    resolve_external=False,
+    reference_df=None,
+):
+    """Build the citation network for a metadata corpus.
+
+    The network is self-enclosed by default: edges only point at
+    documents present in the corpus. References to cases outside it are
+    returned in the third value (one row per citing document and
+    unresolved reference, with the parsed application numbers, casename,
+    year and language).
+
+    :param str metadata_path: Path to a metadata CSV file.
+    :param pd.DataFrame df: Metadata DataFrame (alternative to path).
+    :param str save_file: Whether to save results to data/ ("y"/"n").
+    :param bool resolve_external: Resolve references that point outside
+        the corpus by querying HUDOC (batched appno/casename lookups).
+        Resolved targets are added to the edges, and their metadata is
+        appended to the nodes with in_corpus=False.
+    :param pd.DataFrame reference_df: Resolve external references
+        offline against this larger metadata DataFrame instead of (or
+        before) querying HUDOC. Composes with resolve_external: offline
+        first, then HUDOC for the remainder.
+    :return: tuple (nodes, edges, missing_df). missing_df contains only
+        the references that stayed unresolved.
+    """
     nodes, edges, missing_df = echr_nodes_edges(metadata_path=metadata_path, data=df)
+    if isinstance(nodes, str):
+        # echr_nodes_edges could not produce a network (no/bad input)
+        return nodes, edges, missing_df
+
+    resolved_df = None
+    if reference_df is not None or resolve_external:
+        from .ECHR_reference_resolver import resolve_references
+
+        resolved_parts, external_parts = [], []
+        still_missing = missing_df
+        if reference_df is not None and len(still_missing) > 0:
+            resolved, external, still_missing = resolve_references(
+                still_missing, reference_df=reference_df
+            )
+            resolved_parts.append(resolved)
+            external_parts.append(external)
+        if resolve_external and len(still_missing) > 0:
+            resolved, external, still_missing = resolve_references(still_missing)
+            resolved_parts.append(resolved)
+            external_parts.append(external)
+
+        resolved_df = (
+            pd.concat(resolved_parts, ignore_index=True)
+            if resolved_parts
+            else pd.DataFrame()
+        )
+        external_nodes = (
+            pd.concat(external_parts, ignore_index=True).drop_duplicates(
+                subset=["itemid"]
+            )
+            if external_parts
+            else pd.DataFrame()
+        )
+        missing_df = still_missing
+
+        if len(resolved_df) > 0:
+            edges = _merge_resolved_into_edges(edges, resolved_df)
+            nodes = _append_external_nodes(nodes, external_nodes)
+            logging.info(
+                f"Resolved {len(resolved_df)} external references to "
+                f"{len(external_nodes)} documents; "
+                f"{len(missing_df)} references remain unresolved"
+            )
+
     if save_file == "y":
         Path("data").mkdir(parents=True, exist_ok=True)
         edges.to_csv(
@@ -273,9 +345,129 @@ def get_nodes_edges(metadata_path=None, df=None, save_file="y"):
                 index=False,
                 encoding="utf-8",
             )
-        return nodes, edges, missing_df
+        if resolved_df is not None and len(resolved_df) > 0:
+            resolved_df.to_csv(
+                os.path.join("data", "ECHR_resolved_references.csv"),
+                index=False,
+                encoding="utf-8",
+            )
 
     return nodes, edges, missing_df
+
+
+def _merge_resolved_into_edges(edges, resolved_df):
+    """Union resolved external targets into the per-case reference lists."""
+    edges_map = {
+        row["ecli"]: set(row["references"]) for _, row in edges.iterrows()
+    }
+    for citing_id, group in resolved_df.groupby("citing_id"):
+        targets = set(group["resolved_id"]) - {citing_id}
+        if targets:
+            edges_map.setdefault(citing_id, set()).update(targets)
+    merged = pd.DataFrame(
+        {
+            "ecli": sorted(edges_map),
+            "references": [sorted(edges_map[k]) for k in sorted(edges_map)],
+        }
+    )
+    return merged
+
+
+def _append_external_nodes(nodes, external_nodes):
+    """Append resolved out-of-corpus documents, flagged in_corpus=False."""
+    from .ECHR_nodes_edges_list_transform import node_identifier
+
+    nodes = nodes.assign(in_corpus=True)
+    if len(external_nodes) == 0:
+        return nodes
+    corpus_itemids = (
+        set(nodes["itemid"].astype(str)) if "itemid" in nodes.columns else set()
+    )
+    corpus_ids = set(
+        nodes.apply(
+            lambda row: node_identifier(row.get("ecli"), row.get("itemid")),
+            axis=1,
+        )
+    )
+    external = external_nodes[
+        ~external_nodes["itemid"].astype(str).isin(corpus_itemids)
+    ].copy()
+    external = external[
+        ~external.apply(
+            lambda row: node_identifier(row.get("ecli"), row.get("itemid")),
+            axis=1,
+        ).isin(corpus_ids)
+    ]
+    return pd.concat(
+        [nodes, external.assign(in_corpus=False)], ignore_index=True
+    )
+
+
+def get_document_citations(
+    itemid=None,
+    document=None,
+    resolve=True,
+    reference_df=None,
+    verbose=False,
+):
+    """Full out-citation list of a single document.
+
+    Parses the document's scl field into one row per cited case and,
+    unless resolve=False, resolves each citation to a real HUDOC
+    document (offline against reference_df when given, otherwise via
+    batched HUDOC queries). Unresolvable references are kept with empty
+    resolution columns rather than dropped.
+
+    :param str itemid: HUDOC itemid; the document's metadata (including
+        scl) is fetched automatically.
+    :param document: Alternatively, an in-memory mapping/Series with an
+        'scl' field (and optionally ecli/itemid).
+    :param bool resolve: Whether to resolve the parsed references.
+    :param pd.DataFrame reference_df: Optional offline reference corpus.
+    :return: DataFrame with one row per citation; resolved rows carry
+        resolved_id, resolved_itemid, resolved_docname, match_method.
+
+    Example:
+        citations = get_document_citations(itemid='001-100448')
+        resolved = citations[citations['resolved_id'].notna()]
+    """
+    from .ECHR_nodes_edges_list_transform import node_identifier
+    from .ECHR_reference_resolver import (
+        parse_scl_references,
+        resolve_references,
+    )
+
+    if itemid is None and document is None:
+        raise ValueError("Provide either itemid or document")
+
+    if document is None:
+        link = (
+            "https://hudoc.echr.coe.int/eng#"
+            f'{{"itemid":["{itemid}"]}}'
+        )
+        fetched = get_echr(
+            link=link,
+            save_file="n",
+            progress_bar=False,
+            verbose=verbose,
+            fields=["itemid", "ecli", "docname", "languageisocode", "scl"],
+        )
+        if fetched is False or len(fetched) == 0:
+            logging.warning(f"No document found for itemid {itemid}")
+            return pd.DataFrame()
+        document = fetched.iloc[0]
+
+    citing_id = node_identifier(
+        document.get("ecli"), document.get("itemid")
+    )
+    references = parse_scl_references(document.get("scl"), citing_id=citing_id)
+    if not resolve or len(references) == 0:
+        return references
+
+    resolved, _, still_missing = resolve_references(
+        references, reference_df=reference_df, verbose=verbose
+    )
+    return pd.concat([resolved, still_missing], ignore_index=True)
 
 
 def prepare_echr_corpus(df, full_texts):

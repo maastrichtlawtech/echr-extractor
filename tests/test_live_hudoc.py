@@ -13,7 +13,7 @@ network requests and take minutes rather than seconds.
 import pandas as pd
 import pytest
 
-from echr_extractor import get_echr, get_nodes_edges
+from echr_extractor import get_document_citations, get_echr, get_nodes_edges
 
 pytestmark = pytest.mark.live
 
@@ -183,6 +183,58 @@ class TestLiveLargeFetch:
         df = fetch(count=10500, language=["ENG"], fields=["itemid", "kpdate"])
         assert len(df) == 10500
         assert df["itemid"].is_unique
+
+
+class TestLiveReferenceResolution:
+    def test_single_document_out_citations(self):
+        """Sanoma Uitgevers B.V. v. the Netherlands [GC] cites ~20 cases;
+        the resolver must find most of them in HUDOC."""
+        result = get_document_citations(itemid="001-100448")
+        assert len(result) > 10
+        resolved = result[result["resolved_id"].notna()]
+        assert len(resolved) / len(result) > 0.6
+        # appno-resolved targets must carry the appno cited in the text
+        for _, row in resolved[resolved["match_method"] == "appno"].iterrows():
+            assert any(
+                a in row["missing_references"]
+                for a in row["extracted_appnos"].split(";")
+            )
+        # a famous known citation must be among them
+        assert (
+            resolved["resolved_docname"]
+            .str.contains("GOODWIN", case=False)
+            .any()
+        )
+
+    def test_network_with_external_resolution(self):
+        df = fetch(
+            start_date="2022-01-10",
+            end_date="2022-01-20",
+            fields=EDGE_FIELDS,
+        )
+        plain_nodes, plain_edges, plain_missing = get_nodes_edges(
+            df=df, save_file="n"
+        )
+        nodes, edges, missing = get_nodes_edges(
+            df=df, save_file="n", resolve_external=True
+        )
+        # resolution strictly reduces the unresolved set and adds nodes
+        assert len(missing) < len(plain_missing)
+        assert "in_corpus" in nodes.columns
+        external = nodes[~nodes["in_corpus"]]
+        assert len(external) > 0
+        assert len(nodes) == len(plain_nodes) + len(external)
+        # every edge target is now a known node identifier
+        known = set(
+            nodes.apply(
+                lambda r: str(r.get("ecli")).strip()
+                if pd.notna(r.get("ecli")) and str(r.get("ecli")).strip()
+                else str(r.get("itemid")),
+                axis=1,
+            )
+        )
+        for refs in edges["references"]:
+            assert set(refs) <= known
 
 
 class TestLiveCitationNetwork:

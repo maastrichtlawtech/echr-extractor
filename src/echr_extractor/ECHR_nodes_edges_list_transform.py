@@ -8,6 +8,15 @@ from tqdm import tqdm
 
 from .clean_ref import clean_pattern
 
+MISSING_REFERENCE_COLUMNS = [
+    "citing_id",
+    "missing_references",
+    "extracted_appnos",
+    "casename",
+    "year",
+    "ref_language",
+]
+
 
 @lru_cache(maxsize=200000)
 def parse_date_cached(text):
@@ -167,6 +176,7 @@ def retrieve_edges_list(df, df_unfiltered):
         leave=True,
     ):
         eclis = set()
+        citing_id = node_identifier(item.ecli, getattr(item, "itemid", None))
 
         if pd.notna(item.scl):
             ref_list = str(item.scl).split(";")
@@ -285,11 +295,19 @@ def retrieve_edges_list(df, df_unfiltered):
                     eclis.update(final_candidates)
                 else:
                     count += 1
-                    missing_cases.append(ref)
+                    missing_cases.append(
+                        {
+                            "citing_id": citing_id,
+                            "missing_references": ref,
+                            "extracted_appnos": ";".join(app_numbers),
+                            "casename": str(get_casename(ref) or "").strip(),
+                            "year": year_from_ref if year_from_ref > 0 else None,
+                            "ref_language": ref_lang,
+                        }
+                    )
 
             # Add edges for this case, keyed by ECLI or itemid fallback.
             # A case must not reference itself (original behavior).
-            citing_id = node_identifier(item.ecli, getattr(item, "itemid", None))
             eclis.discard(citing_id)
             if eclis and citing_id:
                 edges_list.append({"ecli": citing_id, "references": list(eclis)})
@@ -305,9 +323,17 @@ def retrieve_edges_list(df, df_unfiltered):
     else:
         edges = pd.DataFrame(columns=["ecli", "references"])
 
-    missing_cases_set = set(missing_cases)
-    missing_cases = list(missing_cases_set)
-    missing_df = pd.DataFrame({"missing_references": missing_cases})
+    # One row per (citing document, unresolved reference), with the
+    # parsed components so callers can distinguish out-of-corpus
+    # citations from unparseable ones and resolve them later.
+    if missing_cases:
+        missing_df = (
+            pd.DataFrame(missing_cases)
+            .drop_duplicates(subset=["citing_id", "missing_references"])
+            .reset_index(drop=True)
+        )
+    else:
+        missing_df = pd.DataFrame(columns=MISSING_REFERENCE_COLUMNS)
 
     return edges, missing_df
 

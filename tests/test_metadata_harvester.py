@@ -10,7 +10,6 @@ import urllib.parse
 from unittest.mock import MagicMock, patch
 
 import pandas as pd
-import pytest
 
 from echr_extractor.ECHR_metadata_harvester import (
     basic_function,
