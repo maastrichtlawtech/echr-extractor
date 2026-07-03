@@ -263,9 +263,11 @@ import json
 import pandas as pd
 from echr_extractor import get_echr_segments
 
-# Load previously saved data
-df = pd.read_csv('data/echr_metadata.csv')
-with open('data/echr_full_text.json') as f:
+# Load previously saved data. Saved file names include the fetched
+# range, e.g. echr_metadata_0-100_dates_START-END.csv and
+# echr_full_text_0-100_dates_START-END.json
+df = pd.read_csv('data/echr_metadata_0-100_dates_START-END.csv')
+with open('data/echr_full_text_0-100_dates_START-END.json') as f:
     full_texts = json.load(f)
 
 # Segment with custom settings
@@ -295,9 +297,11 @@ df = get_echr(
 
 print(f"Found {len(df)} cases about Article 8")
 
-# Search for multiple conditions
+# Search for multiple conditions. Note: the 'violation' field contains
+# the numbers of the violated articles (not YES/NO), so filter for a
+# violation of those same articles:
 df = get_echr(
-    query_payload='article:(8 OR 10) AND violation:YES',
+    query_payload='article:(8 OR 10) AND (violation:8 OR violation:10)',
     language=['ENG']
 )
 ```
@@ -359,13 +363,13 @@ echr-extractor extract --count 100 --language ENG --verbose
 # Extract metadata and full text
 echr-extractor extract-full --count 50 --language ENG --threads 10
 
-# Generate network data
-echr-extractor network --metadata-path data/echr_metadata.csv
+# Generate network data (file names include the fetched range)
+echr-extractor network --metadata-path data/echr_metadata_0-100_dates_START-END.csv
 
 # Segment full texts into legal sections
 echr-extractor segment \
-  --metadata-path data/echr_metadata.csv \
-  --fulltext-path data/echr_full_text.json \
+  --metadata-path data/echr_metadata_0-100_dates_START-END.csv \
+  --fulltext-path data/echr_full_text_0-100_dates_START-END.json \
   --allowed-langs ENG FRE \
   --min-segment-length 50
 
@@ -377,8 +381,8 @@ echr-extractor --help
 
 When `save_file='y'` (default), the library creates a `data/` directory with:
 
-- `ECHR_metadata_*.csv` - Case metadata
-- `ECHR_full_text_*.json` - Full case texts (when using `get_echr_extra`)
+- `echr_metadata_*.csv` - Case metadata (name includes the fetched index/date range)
+- `echr_full_text_*.json` - Full case texts (when using `get_echr_extra`)
 - `ECHR_nodes.csv` - Network nodes (when using `get_nodes_edges`)
 - `ECHR_edges.csv` - Network edges (when using `get_nodes_edges`)
 - `ECHR_missing_references.csv` - Unresolved citations (when using `get_nodes_edges`)
