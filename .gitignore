@@ -142,3 +142,4 @@ data/
 temp_repo/
 
 .vscode
+.DS_Store
