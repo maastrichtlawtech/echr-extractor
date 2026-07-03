@@ -74,7 +74,11 @@ def _normalize_corpus_columns(df: pd.DataFrame) -> pd.DataFrame:
         for column in ["itemid", "languageisocode", "ecli", "doctype", "doctypebranch", "fulltext"]
         if column in normalized.columns
     ]
-    return normalized[ordered]
+    # Preserve any additional metadata columns (appno, article, scl, ...)
+    # after the canonical ones — prepare_echr_corpus documents that the
+    # metadata columns survive the merge.
+    extras = [column for column in normalized.columns if column not in ordered]
+    return normalized[ordered + extras]
 
 
 def _normalize_full_text_records(

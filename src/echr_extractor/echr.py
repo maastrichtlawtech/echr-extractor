@@ -212,6 +212,10 @@ def get_echr_extra(
     :return: tuple of (pandas.DataFrame, list) containing metadata and full-text data,
              or (False, False) if extraction failed.
     """
+    # Mirror get_echr's count handling so saved file names match the ones
+    # get_echr would produce for the same parameters (e.g. 0-100, not 0-ALL)
+    if count:
+        end_id = int(start_id) + count
     df = get_echr(
         start_id=start_id,
         end_id=end_id,
