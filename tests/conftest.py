@@ -1,7 +1,35 @@
 """Test configuration and fixtures."""
 
+import os
+
 import pandas as pd
 import pytest
+
+
+def pytest_addoption(parser):
+    parser.addoption(
+        "--run-live",
+        action="store_true",
+        default=False,
+        help="run tests that hit the real HUDOC API",
+    )
+
+
+def pytest_configure(config):
+    config.addinivalue_line(
+        "markers",
+        "live: test performs real HUDOC API requests "
+        "(skipped unless --run-live or ECHR_RUN_LIVE=1)",
+    )
+
+
+def pytest_collection_modifyitems(config, items):
+    if config.getoption("--run-live") or os.environ.get("ECHR_RUN_LIVE") == "1":
+        return
+    skip_live = pytest.mark.skip(reason="live HUDOC test: pass --run-live to enable")
+    for item in items:
+        if "live" in item.keywords:
+            item.add_marker(skip_live)
 
 
 @pytest.fixture

@@ -100,12 +100,56 @@ Retrieves both metadata and full-text content for ECHR cases.
 
 Generates nodes and edges for citation network analysis from case metadata.
 
+The network is **self-enclosed by default**: edges only point at documents
+present in the corpus you pass in. Citations to cases outside the corpus are
+returned (and saved) as a missing-references table with one row per citing
+document and unresolved reference, including the parsed application numbers,
+casename, year, and language — so out-of-corpus citations are never silently
+lost and can be resolved later.
+
 **Parameters:**
 - `metadata_path` (str, optional): Path to metadata CSV file
 - `df` (DataFrame, optional): Metadata DataFrame (use one of these two)
 - `save_file` (str, default: 'y'): Save to files ('y') or return objects ('n')
+- `resolve_external` (bool, default: False): Resolve references that point
+  outside the corpus by querying HUDOC (batched lookups). Resolved targets are
+  added to the edges and their metadata is appended to the nodes with
+  `in_corpus=False`
+- `reference_df` (DataFrame, optional): Resolve external references offline
+  against this larger metadata DataFrame instead of querying HUDOC (composes
+  with `resolve_external`: offline first, HUDOC for the remainder)
 
 **Returns:** Tuple of (nodes DataFrame, edges DataFrame, missing references DataFrame)
+
+### `get_document_citations()` - Out-Citations of a Single Document
+
+Parses one document's complete citation list (its `scl` field) and resolves
+each cited case to a real HUDOC document.
+
+**Parameters:**
+- `itemid` (str, optional): HUDOC itemid; metadata is fetched automatically
+- `document` (dict/Series, optional): In-memory document with an `scl` field
+- `resolve` (bool, default: True): Resolve citations against HUDOC
+- `reference_df` (DataFrame, optional): Resolve offline against this corpus
+
+**Returns:** DataFrame with one row per citation. Resolved rows carry
+`resolved_id`, `resolved_itemid`, `resolved_docname`, and `match_method`
+(`appno` or `casename`); unresolvable references are kept with empty
+resolution columns, never dropped.
+
+### `resolve_references()` / `parse_scl_references()` - Lower-Level Building Blocks
+
+For custom pipelines, the pieces behind the two functions above are exported
+directly:
+
+- `parse_scl_references(scl, citing_id=None)` turns a raw `scl` citation
+  string into a DataFrame with one row per reference (parsed application
+  numbers, casename, year, language)
+- `resolve_references(missing_df, reference_df=None)` resolves any such table
+  (including the missing-references output of `get_nodes_edges()`) and returns
+  `(resolved, external_nodes, still_missing)`. With `reference_df` it works
+  fully offline; without it, HUDOC is queried in batches. References are tried
+  by application number first, then by casename
 
 ### `get_echr_segments()` - Segment Full Texts
 
@@ -229,6 +273,52 @@ print(f"Missing references: {len(missing)} unresolved citations")
 # - data/ECHR_edges.csv (citation relationships)
 # - data/ECHR_nodes.json (JSON format)
 # - data/ECHR_edges.json (JSON format)
+# - data/ECHR_missing_references.csv (citations pointing outside the corpus,
+#   with parsed appnos/casename/year/language)
+```
+
+The network is self-enclosed: edges only connect documents inside your fetch.
+To also link citations that point *outside* the corpus, resolve them against
+HUDOC (or against a larger offline corpus):
+
+```python
+from echr_extractor import get_echr, get_nodes_edges
+
+df = get_echr(start_date='2022-01-10', end_date='2022-01-20', save_file='n')
+
+# Resolve out-of-corpus citations with batched HUDOC lookups
+nodes, edges, missing = get_nodes_edges(df=df, save_file='n',
+                                        resolve_external=True)
+
+external = nodes[~nodes['in_corpus']]
+print(f"{len(external)} cited cases fetched from outside the corpus")
+print(f"{len(missing)} references could not be resolved at all")
+
+# Offline alternative: resolve against metadata you already downloaded
+# nodes, edges, missing = get_nodes_edges(df=df, reference_df=full_corpus_df)
+```
+
+### Example 5b: Out-Citations of a Single Document
+
+```python
+from echr_extractor import get_document_citations
+
+# Everything Sanoma Uitgevers B.V. v. the Netherlands [GC] cites
+citations = get_document_citations(itemid='001-100448')
+
+resolved = citations[citations['resolved_id'].notna()]
+print(f"{len(resolved)} of {len(citations)} citations resolved")
+print(resolved[['missing_references', 'resolved_docname', 'match_method']].head())
+
+# Works on in-memory documents too (e.g. a row from get_echr output):
+# citations = get_document_citations(document=df.iloc[0])
+```
+
+Or from the command line:
+
+```bash
+echr-extractor citations --itemid 001-100448
+# -> data/echr_citations_001-100448.csv
 ```
 
 ### Example 6: Segment Full Texts into Legal Sections
@@ -263,9 +353,11 @@ import json
 import pandas as pd
 from echr_extractor import get_echr_segments
 
-# Load previously saved data
-df = pd.read_csv('data/echr_metadata.csv')
-with open('data/echr_full_text.json') as f:
+# Load previously saved data. Saved file names include the fetched
+# range, e.g. echr_metadata_0-100_dates_START-END.csv and
+# echr_full_text_0-100_dates_START-END.json
+df = pd.read_csv('data/echr_metadata_0-100_dates_START-END.csv')
+with open('data/echr_full_text_0-100_dates_START-END.json') as f:
     full_texts = json.load(f)
 
 # Segment with custom settings
@@ -295,9 +387,11 @@ df = get_echr(
 
 print(f"Found {len(df)} cases about Article 8")
 
-# Search for multiple conditions
+# Search for multiple conditions. Note: the 'violation' field contains
+# the numbers of the violated articles (not YES/NO), so filter for a
+# violation of those same articles:
 df = get_echr(
-    query_payload='article:(8 OR 10) AND violation:YES',
+    query_payload='article:(8 OR 10) AND (violation:8 OR violation:10)',
     language=['ENG']
 )
 ```
@@ -359,13 +453,19 @@ echr-extractor extract --count 100 --language ENG --verbose
 # Extract metadata and full text
 echr-extractor extract-full --count 50 --language ENG --threads 10
 
-# Generate network data
-echr-extractor network --metadata-path data/echr_metadata.csv
+# Generate network data (file names include the fetched range)
+echr-extractor network --metadata-path data/echr_metadata_0-100_dates_START-END.csv
+
+# Same, but also resolve citations pointing outside the corpus via HUDOC
+echr-extractor network --metadata-path data/echr_metadata_0-100_dates_START-END.csv --resolve-external
+
+# List and resolve the out-citations of a single document
+echr-extractor citations --itemid 001-100448
 
 # Segment full texts into legal sections
 echr-extractor segment \
-  --metadata-path data/echr_metadata.csv \
-  --fulltext-path data/echr_full_text.json \
+  --metadata-path data/echr_metadata_0-100_dates_START-END.csv \
+  --fulltext-path data/echr_full_text_0-100_dates_START-END.json \
   --allowed-langs ENG FRE \
   --min-segment-length 50
 
@@ -377,11 +477,13 @@ echr-extractor --help
 
 When `save_file='y'` (default), the library creates a `data/` directory with:
 
-- `ECHR_metadata_*.csv` - Case metadata
-- `ECHR_full_text_*.json` - Full case texts (when using `get_echr_extra`)
+- `echr_metadata_*.csv` - Case metadata (name includes the fetched index/date range)
+- `echr_full_text_*.json` - Full case texts (when using `get_echr_extra`)
 - `ECHR_nodes.csv` - Network nodes (when using `get_nodes_edges`)
 - `ECHR_edges.csv` - Network edges (when using `get_nodes_edges`)
-- `ECHR_missing_references.csv` - Unresolved citations (when using `get_nodes_edges`)
+- `ECHR_missing_references.csv` - Unresolved citations with parsed appnos/casename/year/language (when using `get_nodes_edges`)
+- `ECHR_resolved_references.csv` - Externally resolved citations (when using `resolve_external` or `reference_df`)
+- `echr_citations_<itemid>.csv` - Out-citations of one document (when using the `citations` CLI command)
 - `ECHR_segments.csv` - Segmented legal sections (when using `get_echr_segments`)
 
 ## Performance Tips

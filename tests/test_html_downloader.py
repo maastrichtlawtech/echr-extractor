@@ -1,4 +1,85 @@
-from echr_extractor.ECHR_html_downloader import get_full_text_from_html
+from unittest.mock import MagicMock, patch
+
+import pandas as pd
+import requests as requests_module
+
+from echr_extractor.ECHR_html_downloader import (
+    download_full_text_main,
+    get_full_text_from_html,
+)
+
+
+def fake_html_response(status_code, body=""):
+    response = MagicMock()
+    response.status_code = status_code
+    response.text = body
+    if status_code >= 400:
+        response.raise_for_status.side_effect = (
+            requests_module.exceptions.HTTPError(f"{status_code}")
+        )
+    else:
+        response.raise_for_status.return_value = None
+    return response
+
+
+class TestDownloadFullTextMain:
+    def test_error_pages_are_not_stored_as_text(self, caplog):
+        """A 404/500 body must never end up as a document's full_text;
+        permanently failing documents are dropped with a warning."""
+        df = pd.DataFrame(
+            {"itemid": ["001-1", "001-2"], "ecli": ["ECLI:1", "ECLI:2"]}
+        )
+        responses = {
+            "001-1": [fake_html_response(200, "<p>Real judgment text</p>")],
+            "001-2": [
+                fake_html_response(404, "<p>Not found</p>"),
+                fake_html_response(404, "<p>Not found</p>"),
+            ],
+        }
+
+        def fake_get(url, timeout):
+            item_id = url.rsplit("=", 1)[-1]
+            return responses[item_id].pop(0)
+
+        with patch(
+            "echr_extractor.ECHR_html_downloader.requests.get",
+            side_effect=fake_get,
+        ):
+            result = download_full_text_main(df, threads=1)
+
+        by_id = {r["item_id"]: r for r in result}
+        assert by_id["001-1"]["full_text"] == "Real judgment text"
+        assert "001-2" not in by_id
+        assert "could not be downloaded" in caplog.text
+
+    def test_failed_download_recovers_on_retry(self):
+        df = pd.DataFrame({"itemid": ["001-1"], "ecli": ["ECLI:1"]})
+        responses = [
+            fake_html_response(500),
+            fake_html_response(200, "<p>Recovered</p>"),
+        ]
+        with patch(
+            "echr_extractor.ECHR_html_downloader.requests.get",
+            side_effect=responses,
+        ):
+            result = download_full_text_main(df, threads=1)
+
+        assert len(result) == 1
+        assert result[0]["full_text"] == "Recovered"
+
+    def test_empty_conversion_is_kept_but_warned(self, caplog):
+        """HTTP 204 (no HTML conversion available) keeps the record with
+        empty text so alignment with metadata is preserved."""
+        df = pd.DataFrame({"itemid": ["001-1"], "ecli": ["ECLI:1"]})
+        with patch(
+            "echr_extractor.ECHR_html_downloader.requests.get",
+            return_value=fake_html_response(204, ""),
+        ):
+            result = download_full_text_main(df, threads=1)
+
+        assert len(result) == 1
+        assert result[0]["full_text"] == ""
+        assert "No HTML text available" in caplog.text
 
 
 def test_get_full_text_preserves_paragraphs_and_commas():
