@@ -476,6 +476,11 @@ def get_echr_metadata(
     can_partition = not link and not query_payload
     pending_ranges = list(date_ranges)
     batch_idx = 0
+    # start_id offsets the first window that could actually contribute
+    # records: windows with resultcount == 0 carry it forward (there is
+    # nothing to skip in them), but a FAILED window consumes it — its
+    # results may well exist, and applying start_id to a later window
+    # would silently drop records that were never meant to be skipped.
     first_fetch = True
 
     while pending_ranges:
@@ -514,6 +519,7 @@ def get_echr_metadata(
             logging.error(f"Failed to get result count for batch {batch_idx + 1}")
             total_failed += 1
             batch_idx += 1
+            first_fetch = False
             continue
 
         try:
@@ -524,6 +530,7 @@ def get_echr_metadata(
             logging.error(f"Failed to parse result count: {e}")
             total_failed += 1
             batch_idx += 1
+            first_fetch = False
             continue
 
         if resultcount == 0:

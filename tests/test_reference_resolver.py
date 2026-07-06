@@ -13,6 +13,7 @@ from echr_extractor import (
 )
 from echr_extractor.ECHR_nodes_edges_list_transform import (
     MISSING_REFERENCE_COLUMNS,
+    retrieve_edges_list,
 )
 
 HENTRICH_ROW = {
@@ -54,6 +55,32 @@ class TestParseSclReferences:
         assert len(parse_scl_references(None)) == 0
         assert len(parse_scl_references(float("nan"))) == 0
         assert len(parse_scl_references("")) == 0
+
+    def test_parse_matches_network_builder_missing_table(self):
+        """Drift guard: parse_scl_references and the network builder's
+        missing-references table are built from the same shared helpers
+        and must stay row-for-row identical."""
+        scl = (
+            "Nonexistent v. Nowhere, no. 99999/99, 1 January 1999;"
+            "Eur. Court H.R. Ghost v. Void judgment of 27 October 1975"
+        )
+        citing = pd.DataFrame(
+            [
+                {
+                    "itemid": "001-2",
+                    "appno": "100/95",
+                    "docname": "CASE OF AAA v. BELGIUM",
+                    "ecli": "ECLI:CITING",
+                    "languageisocode": "ENG",
+                    "judgementdate": "01/01/2000",
+                    "extractedappno": None,
+                    "scl": scl,
+                }
+            ]
+        )
+        _, missing = retrieve_edges_list(citing, citing)
+        refs = parse_scl_references(scl, citing_id="ECLI:CITING")
+        pd.testing.assert_frame_equal(refs, missing)
 
 
 class TestResolveOffline:
@@ -140,6 +167,122 @@ class TestResolveOffline:
             reference_df=self.reference_df(),
         )
         assert len(resolved) == 0 and len(still) == 1
+
+    def test_old_style_citation_resolves_by_casename(self):
+        """Regression: old-style citations carry 'Eur. Court H.R.' and
+        'judgment of <date>' boilerplate. The resolver used to skip the
+        clean_pattern regexes the network builder applies, so the
+        docname lookup never matched and these stayed unresolved."""
+        refs = parse_scl_references(
+            "Eur. Court H.R. Hentrich v. France judgment of "
+            "22 September 1994, Series A no. 296-A",
+            citing_id="ECLI:CITING",
+        )
+        resolved, _, still = resolve_references(
+            refs, reference_df=self.reference_df()
+        )
+        assert len(still) == 0
+        assert len(resolved) == 1
+        assert resolved.iloc[0]["resolved_id"] == "ECLI:CE:ECHR:1994:HENTRICH"
+        assert resolved.iloc[0]["match_method"] == "casename"
+
+    def test_old_style_citation_with_comma_after_reporter(self):
+        """The 'Eur. Court H.R., <name> judgment of <date>' variant
+        leaves a leading comma behind after boilerplate stripping; it
+        must be trimmed for the docname lookup to match."""
+        refs = parse_scl_references(
+            "Eur. Court H.R., Hentrich v. France judgment of "
+            "22 September 1994, Series A no. 296-A",
+            citing_id="ECLI:CITING",
+        )
+        resolved, _, still = resolve_references(
+            refs, reference_df=self.reference_df()
+        )
+        assert len(still) == 0
+        assert resolved.iloc[0]["resolved_id"] == "ECLI:CE:ECHR:1994:HENTRICH"
+
+    def test_old_style_citation_without_respondent_resolves(self):
+        """Regression: old-style citations that omit the respondent
+        ('Eur. Court H.R. James and Others judgment of ...') contain no
+        'v.' marker and were misclassified as French, so the language
+        filter rejected the English target even after normalization."""
+        belgian_police = dict(
+            HENTRICH_ROW,
+            itemid="001-57435",
+            appno="4464/70",
+            docname="CASE OF NATIONAL UNION OF BELGIAN POLICE v. BELGIUM",
+            ecli="ECLI:CE:ECHR:1975:BELPOLICE",
+            judgementdate="27/10/1975",
+            kpdate="1975-10-27T00:00:00",
+        )
+        refs = parse_scl_references(
+            "Eur. Court H.R. National Union of Belgian Police judgment "
+            "of 27 October 1975, Series A no. 19",
+            citing_id="ECLI:CITING",
+        )
+        assert refs.iloc[0]["ref_language"] == ""
+        resolved, _, still = resolve_references(
+            refs, reference_df=pd.DataFrame([belgian_police])
+        )
+        assert len(still) == 0
+        assert resolved.iloc[0]["resolved_id"] == "ECLI:CE:ECHR:1975:BELPOLICE"
+
+    def test_online_docname_query_uses_normalized_casename(self):
+        """Regression: the online candidate fetch queried HUDOC with the
+        raw casename including 'judgment of' boilerplate, so old-style
+        targets never entered the candidate pool."""
+        refs = parse_scl_references(
+            "Eur. Court H.R. National Union of Belgian Police judgment "
+            "of 27 October 1975, Series A no. 19",
+            citing_id="ECLI:CITING",
+        )
+        with patch(
+            "echr_extractor.ECHR_metadata_harvester.requests.get",
+            return_value=hudoc_response([]),
+        ) as mock_get:
+            resolve_references(refs)
+        url = mock_get.call_args_list[0].args[0]
+        assert "NATIONAL%20UNION%20OF%20BELGIAN%20POLICE" in url
+        assert "JUDGMENT%20OF" not in url
+
+    def test_original_document_preferred_over_translation(self):
+        """When the reference language is unknown, the original ENG/FRE
+        judgment must outrank translation entries (which would otherwise
+        win on itemid order)."""
+        translation = dict(
+            HENTRICH_ROW,
+            itemid="001-00001",  # sorts before the original
+            ecli="ECLI:TRANSLATION",
+            docname="CASE OF HENTRICH v. FRANCE - [Russian Translation]",
+            languageisocode="RUS",
+        )
+        refs = parse_scl_references(
+            "Eur. Court H.R. Hentrich judgment of 22 September 1994",
+            citing_id="ECLI:CITING",
+        )
+        assert refs.iloc[0]["ref_language"] == ""
+        resolved, _, still = resolve_references(
+            refs, reference_df=pd.DataFrame([translation, HENTRICH_ROW])
+        )
+        assert len(still) == 0
+        assert resolved.iloc[0]["resolved_id"] == "ECLI:CE:ECHR:1994:HENTRICH"
+
+    def test_nan_itemid_rows_are_ignored(self):
+        """Regression: reference_df rows with NaN itemids used to
+        stringify to 'nan' and become phantom external nodes."""
+        nan_itemid = dict(HENTRICH_ROW, itemid=float("nan"), ecli="ECLI:NAN")
+        resolved, external, still = resolve_references(
+            self.missing(), reference_df=pd.DataFrame([nan_itemid])
+        )
+        assert len(resolved) == 0 and len(still) == 1
+        assert len(external) == 0
+
+    def test_missing_required_columns_raises(self):
+        malformed = pd.DataFrame(
+            [{"citing_id": "ECLI:CITING", "missing_references": "X v. Y"}]
+        )
+        with pytest.raises(ValueError, match="parse_scl_references"):
+            resolve_references(malformed, reference_df=self.reference_df())
 
     def test_empty_missing_df(self):
         resolved, external, still = resolve_references(

@@ -91,6 +91,143 @@ def node_identifier(ecli, itemid):
     return None
 
 
+def split_scl_references(scl):
+    """Split a raw ``scl`` citation string into cleaned reference strings.
+
+    Shared by the network builder and the reference resolver so both
+    always see the same set of references for a given document.
+    """
+    if scl is None or (isinstance(scl, float) and pd.isna(scl)):
+        return []
+    refs = []
+    for ref in str(scl).split(";"):
+        ref = re.sub("\n", "", ref).strip()
+        if ref:
+            refs.append(ref)
+    return refs
+
+
+def parse_reference(ref, citing_id=None):
+    """Parse one scl citation into its components.
+
+    Returns a dict with the MISSING_REFERENCE_COLUMNS keys: the
+    application numbers found in the reference text itself, the
+    casename, the judgment year (None when absent) and the citation
+    language ("v." marks English case names, "c." French ones).
+
+    Only application numbers from the reference text are extracted here.
+    The citing document's extractedappno list must NOT be blended in: it
+    contains every application number mentioned anywhere in the full
+    text, so using it per reference links each citation to every case
+    the document mentions.
+    """
+    appnos = [x.strip() for x in re.findall(r"[0-9]{3,5}\/[0-9]{2}", ref) if x.strip()]
+    casename = str(get_casename(ref) or "").strip()
+    year = get_year_from_ref(ref.split(","))
+    return {
+        "citing_id": citing_id,
+        "missing_references": ref,
+        "extracted_appnos": ";".join(appnos),
+        "casename": casename,
+        "year": year if year > 0 else None,
+        # "v." marks an English case name, "c." a French one. Detect on
+        # the parsed casename rather than the text before the first
+        # comma: reporter prefixes ("Eur. Court H.R., X v. Y ...") and
+        # commas inside the case name would otherwise hide the "v." and
+        # misclassify the reference as French. Old-style citations
+        # ("Eur. Court H.R. X judgment of ...") contain neither marker;
+        # their language is unknown ("") and the language filter lets
+        # both sides through.
+        "ref_language": _reference_language(casename),
+    }
+
+
+def _reference_language(casename):
+    if "v." in casename:
+        return "ENG"
+    if "c." in casename:
+        return "FRE"
+    return ""
+
+
+def normalize_casename(casename):
+    """Normalize a parsed casename for docname-index lookup.
+
+    The docname index keys are fully uppercased, so the lookup text must
+    stay uppercase too (no "V." -> "v." style case flips, or the
+    word-boundary comparison in find_docname_positions can never match).
+    Old-style citations ("Eur. Court H.R. X judgment of 27 October
+    1975") carry reporter and date boilerplate that docnames never
+    contain; the clean_pattern regexes strip it, and any stray commas
+    the stripped boilerplate leaves at the edges are trimmed as well.
+    """
+    uptext = str(casename).upper()
+    if "BV" in uptext:
+        uptext = uptext.replace("BV", "B.V.")
+    for pattern in clean_pattern:
+        uptext = re.sub(pattern, "", uptext)
+    uptext = re.sub(r"\[.*", "", uptext)
+    return uptext.strip(" ,")
+
+
+def find_docname_positions(uptext, docname_index, max_matches=None):
+    """Word-boundary docname lookup shared by builder and resolver.
+
+    Tries an exact index hit first, then falls back to substring
+    containment aligned on word boundaries: short names like
+    "A v. POLAND" must not match inside every "...a v. Poland"-suffixed
+    docname. ``max_matches`` caps the fallback scan on large corpora.
+    """
+    positions = set()
+    if not uptext:
+        return positions
+    if uptext in docname_index:
+        positions.update(docname_index[uptext])
+        return positions
+    padded_uptext = f" {uptext} "
+    matches_found = 0
+    for docname, docname_positions in docname_index.items():
+        padded_docname = f" {docname} "
+        if padded_uptext in padded_docname or padded_docname in padded_uptext:
+            positions.update(docname_positions)
+            matches_found += len(docname_positions)
+            if max_matches is not None and matches_found > max_matches:
+                break
+    return positions
+
+
+def candidate_year(judgementdate, kpdate=None):
+    """Year a candidate document was delivered, for the year filter.
+
+    Prefers judgementdate and falls back to kpdate (decisions and
+    communicated cases often carry only the latter). Returns None when
+    neither value parses as a date.
+    """
+    for value in (judgementdate, kpdate):
+        if pd.notna(value) and str(value).strip():
+            try:
+                date = parse_date_cached(str(value))
+            except (ValueError, TypeError):
+                continue
+            if date:
+                return date.year
+    return None
+
+
+def passes_reference_filters(cand_lang, cand_year, ref_lang, ref_year):
+    """Language/year candidate filter shared by builder and resolver.
+
+    A candidate survives when its language list contains the reference's
+    language and its year equals the reference's year; a missing value
+    on either side of a comparison lets the candidate through.
+    """
+    if ref_lang and cand_lang and ref_lang not in cand_lang:
+        return False
+    if cand_year and pd.notna(ref_year) and ref_year and cand_year != int(ref_year):
+        return False
+    return True
+
+
 def retrieve_edges_list(df, df_unfiltered):
     """
     OPTIMIZED VERSION: Returns a dataframe consisting of 2 columns 'ecli' and 'references' which
@@ -125,19 +262,16 @@ def retrieve_edges_list(df, df_unfiltered):
                     docname_index[docname] = []
                 docname_index[docname].append(idx)
 
-    # Pre-parse dates and years
+    # Pre-parse judgment years. The cache is exhaustive: it is built
+    # from the same judgementdate values a per-reference re-parse would
+    # see (parse_date_cached is memoized), so there is no fallback
+    # parsing at filter time.
     logging.info("Pre-parsing dates...")
-    date_cache = {}
     year_cache = {}
     for idx, row in df_unfiltered.iterrows():
-        if pd.notna(row.judgementdate):
-            try:
-                date = parse_date_cached(str(row.judgementdate))
-                if date:
-                    date_cache[idx] = date
-                    year_cache[idx] = date.year
-            except (ValueError, TypeError):
-                pass
+        year = candidate_year(row.judgementdate, getattr(row, "kpdate", None))
+        if year:
+            year_cache[idx] = year
 
     # Pre-store language codes
     lang_cache = {}
@@ -157,7 +291,7 @@ def retrieve_edges_list(df, df_unfiltered):
     logging.info("Indexes created:")
     logging.info(f"  - Appno index: {len(appno_index)} entries")
     logging.info(f"  - Docname index: {len(docname_index)} entries")
-    logging.info(f"  - Date cache: {len(date_cache)} entries")
+    logging.info(f"  - Year cache: {len(year_cache)} entries")
 
     # Now process edges with fast lookups
     edges_list = []  # Collect edges in list, then convert to DataFrame at end
@@ -179,24 +313,12 @@ def retrieve_edges_list(df, df_unfiltered):
         citing_id = node_identifier(item.ecli, getattr(item, "itemid", None))
 
         if pd.notna(item.scl):
-            ref_list = str(item.scl).split(";")
-            new_ref_list = []
-            for ref in ref_list:
-                ref = re.sub("\n", "", ref).strip()
-                if ref:
-                    new_ref_list.append(ref)
-
+            new_ref_list = split_scl_references(item.scl)
             tot_num_refs += len(new_ref_list)
 
             for ref in new_ref_list:
-                # Extract application numbers from the reference text
-                # itself. The citing document's extractedappno list must
-                # NOT be blended in here: it contains every application
-                # number mentioned anywhere in the full text, so using it
-                # per reference links each citation to every case the
-                # document mentions.
-                app_numbers = re.findall(r"[0-9]{3,5}\/[0-9]{2}", ref)
-                app_numbers = [x.strip() for x in app_numbers if x.strip()]
+                parsed = parse_reference(ref, citing_id)
+                app_numbers = [a for a in parsed["extracted_appnos"].split(";") if a]
 
                 # Find matching cases
                 candidate_indices = set()
@@ -210,83 +332,25 @@ def retrieve_edges_list(df, df_unfiltered):
                         if appno in appno_index:
                             candidate_indices.update(appno_index[appno])
 
-                # If no matches, try by casename
-                if not candidate_indices:
-                    casename = get_casename(ref)
-                    if casename:
-                        # Normalize casename for lookup. The docname index keys
-                        # are fully uppercased, so the lookup text must stay
-                        # uppercase too (no "V." -> "v." style case flips, or
-                        # the substring comparison below can never match).
-                        patterns = clean_pattern
-                        uptext = casename.upper()
-
-                        if "BV" in uptext:
-                            uptext = uptext.replace("BV", "B.V.")
-
-                        for pattern in patterns:
-                            uptext = re.sub(pattern, "", uptext)
-
-                        uptext = re.sub(r"\[.*", "", uptext)
-                        uptext = uptext.strip()
-
-                        # Try exact match first
-                        if uptext in docname_index:
-                            candidate_indices.update(docname_index[uptext])
-                        else:
-                            # Try partial match (only if needed - this is
-                            # slower). The containment must align on word
-                            # boundaries: short names like "A v. POLAND"
-                            # would otherwise match inside every
-                            # "...a v. Poland"-suffixed docname.
-                            padded_uptext = f" {uptext} "
-                            matches_found = 0
-                            for docname, indices in docname_index.items():
-                                padded_docname = f" {docname} "
-                                if (
-                                    padded_uptext in padded_docname
-                                    or padded_docname in padded_uptext
-                                ):
-                                    candidate_indices.update(indices)
-                                    matches_found += len(indices)
-                                    if matches_found > 100:  # Limit to prevent slowdown
-                                        break
+                # If no matches, try by casename (capped to prevent the
+                # partial-match scan from slowing large corpora down)
+                if not candidate_indices and parsed["casename"]:
+                    candidate_indices = find_docname_positions(
+                        normalize_casename(parsed["casename"]),
+                        docname_index,
+                        max_matches=100,
+                    )
 
                 # Filter candidates by language and year
-                components = ref.split(",")
-                year_from_ref = get_year_from_ref(components)
-
-                # Determine language from reference
-                if "v." in components[0]:
-                    ref_lang = "ENG"
-                else:
-                    ref_lang = "FRE"
-
-                # Filter candidates
                 final_candidates = []
                 for idx in candidate_indices:
-                    # Filter by language
-                    if idx in lang_cache:
-                        case_lang = lang_cache[idx]
-                        if ref_lang not in case_lang:
-                            continue
-
-                    # Filter by year
-                    if year_from_ref > 0 and idx in year_cache:
-                        if year_cache[idx] != year_from_ref:
-                            continue
-                    elif year_from_ref > 0:
-                        # If no cached year, try parsing
-                        try:
-                            if idx in df_unfiltered.index:
-                                row = df_unfiltered.loc[idx]
-                                if pd.notna(row.judgementdate):
-                                    date = parse_date_cached(str(row.judgementdate))
-                                    if date and date.year != year_from_ref:
-                                        continue
-                        except (ValueError, TypeError, AttributeError):
-                            continue
-
+                    if not passes_reference_filters(
+                        lang_cache.get(idx),
+                        year_cache.get(idx),
+                        parsed["ref_language"],
+                        parsed["year"],
+                    ):
+                        continue
                     # Add ECLI if available
                     if idx in ecli_cache:
                         final_candidates.append(ecli_cache[idx])
@@ -295,16 +359,7 @@ def retrieve_edges_list(df, df_unfiltered):
                     eclis.update(final_candidates)
                 else:
                     count += 1
-                    missing_cases.append(
-                        {
-                            "citing_id": citing_id,
-                            "missing_references": ref,
-                            "extracted_appnos": ";".join(app_numbers),
-                            "casename": str(get_casename(ref) or "").strip(),
-                            "year": year_from_ref if year_from_ref > 0 else None,
-                            "ref_language": ref_lang,
-                        }
-                    )
+                    missing_cases.append(parsed)
 
             # Add edges for this case, keyed by ECLI or itemid fallback.
             # A case must not reference itself (original behavior).
