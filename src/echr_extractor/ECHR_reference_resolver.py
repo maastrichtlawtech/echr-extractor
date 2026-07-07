@@ -15,17 +15,19 @@ dropped.
 """
 
 import logging
-import re
 
 import pandas as pd
 
 from .ECHR_metadata_harvester import basic_function, get_r
 from .ECHR_nodes_edges_list_transform import (
     MISSING_REFERENCE_COLUMNS,
-    get_casename,
-    get_year_from_ref,
+    candidate_year,
+    find_docname_positions,
     node_identifier,
-    parse_date_cached,
+    normalize_casename,
+    parse_reference,
+    passes_reference_filters,
+    split_scl_references,
 )
 
 RESOLVER_FIELDS = [
@@ -58,45 +60,17 @@ def parse_scl_references(scl, citing_id=None):
     """Parse an scl citation string into one row per reference.
 
     Returns a DataFrame with MISSING_REFERENCE_COLUMNS, the same shape
-    as the missing-references table produced by the network builder.
+    as the missing-references table produced by the network builder
+    (both are built from the same shared parsing helpers).
     """
-    rows = []
-    if scl is None or (isinstance(scl, float) and pd.isna(scl)):
-        return pd.DataFrame(columns=MISSING_REFERENCE_COLUMNS)
-    for ref in str(scl).split(";"):
-        ref = re.sub("\n", "", ref).strip()
-        if not ref:
-            continue
-        appnos = [
-            x.strip()
-            for x in re.findall(r"[0-9]{3,5}\/[0-9]{2}", ref)
-            if x.strip()
-        ]
-        components = ref.split(",")
-        year = get_year_from_ref(components)
-        rows.append(
-            {
-                "citing_id": citing_id,
-                "missing_references": ref,
-                "extracted_appnos": ";".join(appnos),
-                "casename": str(get_casename(ref) or "").strip(),
-                "year": year if year > 0 else None,
-                "ref_language": "ENG" if "v." in components[0] else "FRE",
-            }
-        )
+    rows = [
+        parse_reference(ref, citing_id) for ref in split_scl_references(scl)
+    ]
     if not rows:
         return pd.DataFrame(columns=MISSING_REFERENCE_COLUMNS)
     return pd.DataFrame(rows).drop_duplicates(
         subset=["citing_id", "missing_references"]
     ).reset_index(drop=True)
-
-
-def _normalize_casename(casename):
-    uptext = str(casename).upper()
-    if "BV" in uptext:
-        uptext = uptext.replace("BV", "B.V.")
-    uptext = re.sub(r"\[.*", "", uptext)
-    return uptext.strip()
 
 
 def _fetch_candidates(query, timeout, retry_attempts, max_attempts, verbose):
@@ -145,7 +119,14 @@ def _candidate_pool_online(
         if row_appnos:
             appnos.update(row_appnos)
         elif str(row["casename"] or "").strip():
-            casenames.add(str(row["casename"]).strip())
+            # Query HUDOC with the NORMALIZED casename: raw old-style
+            # citations carry reporter/date boilerplate ("Eur. Court
+            # H.R. X judgment of ...") that no docname contains, so the
+            # raw string would fetch nothing and the target could never
+            # enter the candidate pool.
+            normalized = normalize_casename(row["casename"])
+            if normalized:
+                casenames.add(normalized)
 
     candidates = []
     appno_list = sorted(appnos)
@@ -176,17 +157,17 @@ def _index_pool(pool):
     appno_index, docname_index = {}, {}
     rows = []
     for _, row in pool.iterrows():
-        ident = node_identifier(row.get("ecli"), row.get("itemid"))
+        # Rows without a usable itemid (user reference_df with NaN
+        # itemids) must be skipped outright: their itemid would
+        # stringify to "nan" and create phantom external nodes.
+        itemid = row.get("itemid")
+        itemid = "" if pd.isna(itemid) else str(itemid).strip()
+        if not itemid or itemid.lower() == "nan":
+            continue
+        ident = node_identifier(row.get("ecli"), itemid)
         if not ident:
             continue
-        year = None
-        for date_col in ("judgementdate", "kpdate"):
-            value = row.get(date_col)
-            if pd.notna(value) and str(value).strip():
-                date = parse_date_cached(str(value))
-                if date:
-                    year = date.year
-                    break
+        year = candidate_year(row.get("judgementdate"), row.get("kpdate"))
         lang = (
             str(row.get("languageisocode")).upper()
             if pd.notna(row.get("languageisocode"))
@@ -199,7 +180,7 @@ def _index_pool(pool):
         )
         entry = {
             "ident": ident,
-            "itemid": str(row.get("itemid") or ""),
+            "itemid": itemid,
             "docname": str(row.get("docname") or ""),
             "year": year,
             "lang": lang,
@@ -220,17 +201,14 @@ def _index_pool(pool):
 
 
 def _filter_candidates(positions, entries, row):
-    year = row["year"]
     ref_lang = str(row["ref_language"] or "")
-    survivors = []
-    for pos in positions:
-        entry = entries[pos]
-        if ref_lang and entry["lang"] and ref_lang not in entry["lang"]:
-            continue
-        if pd.notna(year) and year and entry["year"] and entry["year"] != int(year):
-            continue
-        survivors.append(entry)
-    return survivors
+    return [
+        entries[pos]
+        for pos in positions
+        if passes_reference_filters(
+            entries[pos]["lang"], entries[pos]["year"], ref_lang, row["year"]
+        )
+    ]
 
 
 def _match_reference(row, entries, appno_index, docname_index):
@@ -252,17 +230,10 @@ def _match_reference(row, entries, appno_index, docname_index):
         method = "appno"
 
     if not survivors:
-        uptext = _normalize_casename(row["casename"])
+        uptext = normalize_casename(row["casename"])
         if not uptext:
             return None, method if appnos else "none", 0
-        positions = set()
-        if uptext in docname_index:
-            positions.update(docname_index[uptext])
-        else:
-            padded_up = f" {uptext} "
-            for docname, pos_list in docname_index.items():
-                if padded_up in f" {docname} " or f" {docname} " in padded_up:
-                    positions.update(pos_list)
+        positions = find_docname_positions(uptext, docname_index)
         casename_survivors = _filter_candidates(positions, entries, row)
         if casename_survivors:
             survivors, method = casename_survivors, "casename"
@@ -270,7 +241,17 @@ def _match_reference(row, entries, appno_index, docname_index):
     if not survivors:
         return None, method, 0
     # Deterministic best: prefer judgments, then stable itemid order
-    survivors.sort(key=lambda e: (not e["is_judgment"], e["itemid"]))
+    # Deterministic best: prefer judgments, then original-language
+    # documents (translations carry a "[<language> Translation]" docname
+    # suffix and a non-ENG/FRE language code), then stable itemid order.
+    survivors.sort(
+        key=lambda e: (
+            not e["is_judgment"],
+            e["lang"] not in ("ENG", "FRE"),
+            "TRANSLATION" in e["docname"].upper(),
+            e["itemid"],
+        )
+    )
     return survivors[0], method, len(survivors)
 
 
@@ -315,10 +296,15 @@ def resolve_references(
     """Resolve unresolved citation references to real HUDOC documents.
 
     :param pd.DataFrame missing_df: Missing-references table from
-        get_nodes_edges() (or parse_scl_references()).
+        get_nodes_edges() (or parse_scl_references()). It must contain
+        all MISSING_REFERENCE_COLUMNS: citing_id, missing_references,
+        extracted_appnos, casename, year and ref_language; a ValueError
+        is raised otherwise. Build it with parse_scl_references() rather
+        than by hand.
     :param pd.DataFrame reference_df: Optional metadata DataFrame to
         resolve against offline. When omitted, HUDOC is queried with
-        batched application-number and casename lookups.
+        batched application-number and casename lookups. Rows without a
+        usable itemid are ignored.
     :return: tuple (resolved_df, external_nodes_df, still_missing_df).
         resolved_df has RESOLVED_COLUMNS; external_nodes_df holds one
         metadata row per distinct resolved document; still_missing_df
@@ -329,6 +315,19 @@ def resolve_references(
             pd.DataFrame(columns=RESOLVED_COLUMNS),
             pd.DataFrame(columns=RESOLVER_FIELDS),
             pd.DataFrame(columns=MISSING_REFERENCE_COLUMNS),
+        )
+
+    missing_columns = [
+        column
+        for column in MISSING_REFERENCE_COLUMNS
+        if column not in missing_df.columns
+    ]
+    if missing_columns:
+        raise ValueError(
+            f"missing_df lacks required column(s) {missing_columns}; "
+            f"resolve_references expects all of {MISSING_REFERENCE_COLUMNS}, "
+            "as produced by parse_scl_references() or the "
+            "missing-references table of get_nodes_edges()."
         )
 
     if reference_df is not None:
@@ -354,11 +353,11 @@ def resolve_references(
         retry_df = pd.DataFrame(still_missing_rows)
         retry_names = sorted(
             {
-                str(name).strip()
+                normalize_casename(name)
                 for name, appnos in zip(
                     retry_df["casename"], retry_df["extracted_appnos"]
                 )
-                if str(name or "").strip() and str(appnos or "").strip()
+                if normalize_casename(name) and str(appnos or "").strip()
             }
         )
         extra = []
@@ -371,14 +370,25 @@ def resolve_references(
                 )
             )
         if extra:
-            pool = pd.concat(
-                [pool, pd.DataFrame(extra)], ignore_index=True
-            ).drop_duplicates(subset=["itemid"]).reset_index(drop=True)
-            retry_resolved, still_missing_rows, retry_itemids = _match_rows(
-                retry_df, pool
+            # Match the retry rows against the newly fetched documents
+            # only: everything already in the pool was tried (and
+            # rejected) in the first pass, so re-indexing it would be
+            # wasted work.
+            extra_df = (
+                pd.DataFrame(extra)
+                .drop_duplicates(subset=["itemid"])
+                .reset_index(drop=True)
             )
-            resolved_rows.extend(retry_resolved)
-            resolved_itemids |= retry_itemids
+            extra_df = extra_df[
+                ~extra_df["itemid"].isin(pool["itemid"])
+            ].reset_index(drop=True)
+            if len(extra_df):
+                retry_resolved, still_missing_rows, retry_itemids = (
+                    _match_rows(retry_df, extra_df)
+                )
+                resolved_rows.extend(retry_resolved)
+                resolved_itemids |= retry_itemids
+                pool = pd.concat([pool, extra_df], ignore_index=True)
 
     resolved_df = (
         pd.DataFrame(resolved_rows)

@@ -362,6 +362,52 @@ class TestGetEchrMetadata:
         )
         assert len(df) == 10
 
+    def test_start_id_not_applied_to_later_batch_after_failure(self):
+        """Regression: when the first date window FAILS, start_id must
+        be consumed rather than shifted onto the next window — that
+        window's records were never meant to be skipped."""
+        import requests as requests_module
+
+        records = [make_record(i) for i in range(3)]
+        responses = [
+            requests_module.exceptions.ConnectionError("down"),  # window 1
+            fake_response(3, []),  # window 2 count
+            fake_response(3, records),  # window 2 fetch
+        ]
+        df, mock_get = self.run(
+            responses,
+            start_id=2,
+            start_date="2020-01-01",
+            end_date="2020-12-31",
+            days_per_batch=200,
+            retry_attempts=0,
+            max_attempts=1,
+        )
+        assert len(df) == 3
+        fetch_url = mock_get.call_args_list[-1].args[0]
+        assert "start=0&" in fetch_url
+
+    def test_start_id_carries_past_empty_windows(self):
+        """A window with zero results does not consume start_id: there
+        is nothing in it to skip, so the offset applies to the first
+        window that actually has results."""
+        records = [make_record(i) for i in range(2, 5)]
+        responses = [
+            fake_response(0, []),  # window 1: empty
+            fake_response(5, []),  # window 2 count
+            fake_response(3, records),  # window 2 fetch from index 2
+        ]
+        df, mock_get = self.run(
+            responses,
+            start_id=2,
+            start_date="2020-01-01",
+            end_date="2020-12-31",
+            days_per_batch=200,
+        )
+        assert len(df) == 3
+        fetch_url = mock_get.call_args_list[-1].args[0]
+        assert "start=2&" in fetch_url
+
     def test_selected_fields_in_url(self):
         responses = [fake_response(1, []), fake_response(1, [make_record(0)])]
         _, mock_get = self.run(responses, fields=["itemid", "article"])

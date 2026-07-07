@@ -149,7 +149,11 @@ directly:
   (including the missing-references output of `get_nodes_edges()`) and returns
   `(resolved, external_nodes, still_missing)`. With `reference_df` it works
   fully offline; without it, HUDOC is queried in batches. References are tried
-  by application number first, then by casename
+  by application number first, then by casename. `missing_df` must contain all
+  of the columns `citing_id`, `missing_references`, `extracted_appnos`,
+  `casename`, `year` and `ref_language` (a `ValueError` is raised otherwise) —
+  build it with `parse_scl_references()` or `get_nodes_edges()` rather than by
+  hand
 
 ### `get_echr_segments()` - Segment Full Texts
 

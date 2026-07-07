@@ -10,6 +10,7 @@ from echr_extractor.ECHR_nodes_edges_list_transform import (
     echr_nodes_edges,
     get_casename,
     get_year_from_ref,
+    normalize_casename,
     retrieve_edges_list,
 )
 
@@ -108,6 +109,25 @@ class TestEdgeResolution:
 
         assert len(edges) == 1
         assert edges.iloc[0]["references"] == ["ECLI:CITED:FRE"]
+
+    def test_old_style_reference_by_case_name(self):
+        """Old-style 'Eur. Court H.R. ... judgment of <date>' citations
+        must have their boilerplate stripped before docname lookup."""
+        citing = make_case(
+            "001-2",
+            "ECLI:CITING",
+            "CASE OF AAA v. BELGIUM",
+            appno="100/95",
+            scl=(
+                "Eur. Court H.R. Hentrich v. France judgment of "
+                "22 September 1994, Series A no. 296-A"
+            ),
+        )
+        edges, missing = edges_for([HENTRICH, citing])
+
+        assert len(edges) == 1
+        assert edges.iloc[0]["references"] == ["ECLI:CE:ECHR:1994:HENTRICH"]
+        assert len(missing) == 0
 
     def test_year_mismatch_is_rejected(self):
         wrong_year = dict(HENTRICH, jdate="22/09/1980", judgementdate="22/09/1980")
@@ -407,3 +427,24 @@ class TestHelpers:
 
     def test_get_year_from_ref_echr_citation(self):
         assert get_year_from_ref(["Foo v. Bar", " ECHR 2003-IV"]) == 2003
+
+    def test_normalize_casename_strips_reporter_boilerplate(self):
+        assert (
+            normalize_casename(
+                "Eur. Court H.R. Hentrich v. France judgment of "
+                "22 September 1994"
+            )
+            == "HENTRICH V. FRANCE"
+        )
+
+    def test_normalize_casename_strips_stray_commas(self):
+        assert (
+            normalize_casename(
+                "Eur. Court H.R., Hentrich v. France judgment of "
+                "22 September 1994"
+            )
+            == "HENTRICH V. FRANCE"
+        )
+
+    def test_normalize_casename_plain_name_only_uppercases(self):
+        assert normalize_casename("Hentrich v. France") == "HENTRICH V. FRANCE"
