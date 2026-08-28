@@ -1,4 +1,5 @@
 import logging
+import math
 import re
 import threading
 
@@ -6,6 +7,9 @@ import requests
 from bs4 import BeautifulSoup
 
 base_url = "https://hudoc.echr.coe.int/app/conversion/docx/html/body?library=ECHR&id="
+DEFAULT_TIMEOUT_SECONDS = 75
+DEFAULT_RETRY_ATTEMPTS = 2
+DEFAULT_MAX_WORKERS = 4
 
 
 def get_full_text_from_html(html_text):
@@ -58,21 +62,27 @@ def get_full_text_from_html(html_text):
     return text.strip()
 
 
-def download_full_text_main(df, threads):
+def download_full_text_main(
+    df,
+    threads,
+    timeout=DEFAULT_TIMEOUT_SECONDS,
+    retry_attempts=DEFAULT_RETRY_ATTEMPTS,
+):
     item_ids = df["itemid"]
     eclis = df["ecli"]
     length = item_ids.size
-    if length > threads:
-        at_once_threads = int(length / threads)
-    else:
-        at_once_threads = length
+    if length == 0:
+        return []
+    worker_count = max(1, min(int(threads), length, DEFAULT_MAX_WORKERS))
+    at_once_threads = math.ceil(length / worker_count)
     all_dict = list()
     threads = []
     for i in range(0, length, at_once_threads):
         curr_ids = item_ids[i : (i + at_once_threads)]
         curr_ecli = eclis[i : (i + at_once_threads)]
         t = threading.Thread(
-            target=download_full_text_separate, args=(curr_ids, curr_ecli, all_dict)
+            target=download_full_text_separate,
+            args=(curr_ids, curr_ecli, all_dict, timeout, retry_attempts),
         )
         threads.append(t)
     for t in threads:
@@ -87,7 +97,13 @@ def download_full_text_main(df, threads):
     return json_file
 
 
-def download_full_text_separate(item_ids, eclis, dict_list):
+def download_full_text_separate(
+    item_ids,
+    eclis,
+    dict_list,
+    timeout=DEFAULT_TIMEOUT_SECONDS,
+    retry_attempts=DEFAULT_RETRY_ATTEMPTS,
+):
     full_list = []
     eclis = eclis.reset_index(drop=True)
     item_ids = item_ids.reset_index(drop=True)
@@ -99,7 +115,7 @@ def download_full_text_separate(item_ids, eclis, dict_list):
             item_id = item_ids[i]
             ecli = eclis[i]
             try:
-                r = requests.get(base_url + item_id, timeout=10)
+                r = requests.get(base_url + item_id, timeout=timeout)
                 # An error page must not be stored as the document text
                 r.raise_for_status()
                 json_dict = {
@@ -113,8 +129,12 @@ def download_full_text_separate(item_ids, eclis, dict_list):
                 retry_eclis.append(ecli)
         return retry_ids, retry_eclis
 
-    retry_ids, retry_eclis = download_html(item_ids, eclis)
-    failed_ids, _ = download_html(retry_ids, retry_eclis)
+    retry_ids, retry_eclis = item_ids, eclis
+    for _ in range(max(1, int(retry_attempts))):
+        retry_ids, retry_eclis = download_html(retry_ids, retry_eclis)
+        if not retry_ids:
+            break
+    failed_ids = retry_ids
     if failed_ids:
         logging.warning(
             f"Full text could not be downloaded for {len(failed_ids)} "
