@@ -14,8 +14,8 @@ def fake_html_response(status_code, body=""):
     response.status_code = status_code
     response.text = body
     if status_code >= 400:
-        response.raise_for_status.side_effect = (
-            requests_module.exceptions.HTTPError(f"{status_code}")
+        response.raise_for_status.side_effect = requests_module.exceptions.HTTPError(
+            f"{status_code}"
         )
     else:
         response.raise_for_status.return_value = None
@@ -26,9 +26,7 @@ class TestDownloadFullTextMain:
     def test_error_pages_are_not_stored_as_text(self, caplog):
         """A 404/500 body must never end up as a document's full_text;
         permanently failing documents are dropped with a warning."""
-        df = pd.DataFrame(
-            {"itemid": ["001-1", "001-2"], "ecli": ["ECLI:1", "ECLI:2"]}
-        )
+        df = pd.DataFrame({"itemid": ["001-1", "001-2"], "ecli": ["ECLI:1", "ECLI:2"]})
         responses = {
             "001-1": [fake_html_response(200, "<p>Real judgment text</p>")],
             "001-2": [
@@ -74,12 +72,28 @@ class TestDownloadFullTextMain:
         with patch(
             "echr_extractor.ECHR_html_downloader.requests.get",
             return_value=fake_html_response(204, ""),
-        ):
+        ) as get:
             result = download_full_text_main(df, threads=1)
 
         assert len(result) == 1
         assert result[0]["full_text"] == ""
+        assert get.call_count == 2
         assert "No HTML text available" in caplog.text
+
+    def test_empty_conversion_recovers_on_retry(self):
+        df = pd.DataFrame({"itemid": ["001-1"], "ecli": ["ECLI:1"]})
+        responses = [
+            fake_html_response(204, ""),
+            fake_html_response(200, "<p>Available on retry</p>"),
+        ]
+        with patch(
+            "echr_extractor.ECHR_html_downloader.requests.get",
+            side_effect=responses,
+        ):
+            result = download_full_text_main(df, threads=1)
+
+        assert len(result) == 1
+        assert result[0]["full_text"] == "Available on retry"
 
 
 def test_get_full_text_preserves_paragraphs_and_commas():
