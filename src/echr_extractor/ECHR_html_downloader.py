@@ -105,6 +105,7 @@ def download_full_text_separate(
     retry_attempts=DEFAULT_RETRY_ATTEMPTS,
 ):
     full_list = []
+    empty_by_id = {}
     eclis = eclis.reset_index(drop=True)
     item_ids = item_ids.reset_index(drop=True)
 
@@ -118,13 +119,25 @@ def download_full_text_separate(
                 r = requests.get(base_url + item_id, timeout=timeout)
                 # An error page must not be stored as the document text
                 r.raise_for_status()
+                full_text = get_full_text_from_html(r.text)
                 json_dict = {
                     "item_id": item_id,
                     "ecli": ecli,
-                    "full_text": get_full_text_from_html(r.text),
+                    "full_text": full_text,
                 }
-                full_list.append(json_dict)
+                if full_text:
+                    empty_by_id.pop(item_id, None)
+                    full_list.append(json_dict)
+                else:
+                    # HUDOC's conversion service can temporarily return a
+                    # successful but empty response. Retry it just like a
+                    # transport error, while retaining the empty record if
+                    # every attempt is empty so metadata alignment is kept.
+                    empty_by_id[item_id] = json_dict
+                    retry_ids.append(item_id)
+                    retry_eclis.append(ecli)
             except Exception:
+                empty_by_id.pop(item_id, None)
                 retry_ids.append(item_id)
                 retry_eclis.append(ecli)
         return retry_ids, retry_eclis
@@ -134,14 +147,15 @@ def download_full_text_separate(
         retry_ids, retry_eclis = download_html(retry_ids, retry_eclis)
         if not retry_ids:
             break
-    failed_ids = retry_ids
+    empty_ids = [item_id for item_id in retry_ids if item_id in empty_by_id]
+    failed_ids = [item_id for item_id in retry_ids if item_id not in empty_by_id]
     if failed_ids:
         logging.warning(
             f"Full text could not be downloaded for {len(failed_ids)} "
             f"document(s): {failed_ids}"
         )
-    empty_ids = [d["item_id"] for d in full_list if not d["full_text"]]
     if empty_ids:
+        full_list.extend(empty_by_id[item_id] for item_id in empty_ids)
         logging.warning(
             f"No HTML text available (kept with empty full_text) for "
             f"{len(empty_ids)} document(s): {empty_ids}"
