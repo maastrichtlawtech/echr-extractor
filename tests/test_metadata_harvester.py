@@ -104,9 +104,7 @@ class TestLinkToQuery:
         assert '(itemid="001-100448") OR (itemid:"001-100448")' in query
 
     def test_kpdate_range(self):
-        query = link_to_query(
-            hudoc_link('{"kpdate":["2020-01-01","2020-12-31"]}')
-        )
+        query = link_to_query(hudoc_link('{"kpdate":["2020-01-01","2020-12-31"]}'))
         assert 'kpdate>="2020-01-01" AND kpdate<="2020-12-31"' in query
 
     def test_kpdate_open_start_defaults_to_1900(self):
@@ -143,16 +141,12 @@ class TestLinkToQuery:
         after the batching rewrite, and were then silently dropped, which
         made link-based filtered fetches return the whole database.
         """
-        query = link_to_query(
-            hudoc_link('{"article":["10"],"respondent":["NLD"]}')
-        )
+        query = link_to_query(hudoc_link('{"article":["10"],"respondent":["NLD"]}'))
         assert '(article="10") OR (article:"10")' in query
         assert '(respondent="NLD") OR (respondent:"NLD")' in query
 
     def test_unmapped_violation_and_importance_filters(self):
-        query = link_to_query(
-            hudoc_link('{"violation":["10"],"importance":["1"]}')
-        )
+        query = link_to_query(hudoc_link('{"violation":["10"],"importance":["1"]}'))
         assert '(violation="10")' in query
         assert '(importance="1")' in query
 
@@ -429,10 +423,10 @@ class TestGetEchrMetadata:
         big = [make_record(i) for i in range(8000)]
         small = [make_record(i) for i in range(8000, 12000)]
         responses = [
-            fake_response(12000, []),   # whole window: over the cap -> split
-            fake_response(8000, []),    # first half fits
+            fake_response(12000, []),  # whole window: over the cap -> split
+            fake_response(8000, []),  # first half fits
             fake_response(8000, big),
-            fake_response(4000, []),    # second half fits
+            fake_response(4000, []),  # second half fits
             fake_response(4000, small),
         ]
         df, mock_get = self.run(responses, batch_size=8000)
