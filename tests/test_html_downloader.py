@@ -23,6 +23,25 @@ def fake_html_response(status_code, body=""):
 
 
 class TestDownloadFullTextMain:
+    def test_language_placeholders_are_not_requested(self):
+        df = pd.DataFrame(
+            {
+                "itemid": ["001-placeholder", "001-real"],
+                "ecli": ["ECLI:TEST", "ECLI:TEST"],
+                "isplaceholder": [True, False],
+            }
+        )
+
+        with patch(
+            "echr_extractor.ECHR_html_downloader.requests.get",
+            return_value=fake_html_response(200, "<p>Real judgment</p>"),
+        ) as get:
+            result = download_full_text_main(df, threads=1)
+
+        assert [record["item_id"] for record in result] == ["001-real"]
+        assert get.call_count == 1
+        assert get.call_args.args[0].endswith("001-real")
+
     def test_error_pages_are_not_stored_as_text(self, caplog):
         """A 404/500 body must never end up as a document's full_text;
         permanently failing documents are dropped with a warning."""

@@ -83,8 +83,23 @@ def download_full_text_main(
     retry_attempts=DEFAULT_RETRY_ATTEMPTS,
     retry_backoff_seconds=DEFAULT_RETRY_BACKOFF_SECONDS,
 ):
-    item_ids = df["itemid"]
-    eclis = df["ecli"]
+    download_df = df
+    if "isplaceholder" in df.columns:
+        placeholder_values = (
+            df["isplaceholder"].fillna(False).astype(str).str.strip().str.lower()
+        )
+        is_placeholder = placeholder_values.isin({"1", "true", "yes"})
+        skipped = int(is_placeholder.sum())
+        if skipped:
+            logging.info(
+                "Skipping %s HUDOC language-placeholder record(s); these "
+                "records intentionally have no full-text conversion",
+                skipped,
+            )
+        download_df = df.loc[~is_placeholder]
+
+    item_ids = download_df["itemid"].reset_index(drop=True)
+    eclis = download_df["ecli"].reset_index(drop=True)
     length = item_ids.size
     if length == 0:
         return []

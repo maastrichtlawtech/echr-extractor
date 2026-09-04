@@ -414,6 +414,14 @@ class TestGetEchrMetadata:
         url = mock_get.call_args_list[0].args[0]
         assert "select=itemid,article" in url
 
+    def test_default_fields_include_placeholder_metadata(self):
+        responses = [fake_response(1, []), fake_response(1, [make_record(0)])]
+        _, mock_get = self.run(responses, fields=None)
+        url = mock_get.call_args_list[0].args[0]
+        selected = url.split("select=", 1)[1].split("&", 1)[0].split(",")
+        assert "application" in selected
+        assert "isplaceholder" in selected
+
     def test_over_10k_windows_are_partitioned_automatically(self):
         """Regression: HUDOC refuses to page past 10,000 results per
         query (start+length above the cap returns zero rows), so a
