@@ -48,6 +48,7 @@ class TestDownloadFullTextMain:
         by_id = {r["item_id"]: r for r in result}
         assert by_id["001-1"]["full_text"] == "Real judgment text"
         assert "001-2" not in by_id
+        assert len(responses["001-2"]) == 1
         assert "could not be downloaded" in caplog.text
 
     def test_failed_download_recovers_on_retry(self):
@@ -60,7 +61,7 @@ class TestDownloadFullTextMain:
             "echr_extractor.ECHR_html_downloader.requests.get",
             side_effect=responses,
         ):
-            result = download_full_text_main(df, threads=1)
+            result = download_full_text_main(df, threads=1, retry_backoff_seconds=0)
 
         assert len(result) == 1
         assert result[0]["full_text"] == "Recovered"
@@ -73,11 +74,11 @@ class TestDownloadFullTextMain:
             "echr_extractor.ECHR_html_downloader.requests.get",
             return_value=fake_html_response(204, ""),
         ) as get:
-            result = download_full_text_main(df, threads=1)
+            result = download_full_text_main(df, threads=1, retry_backoff_seconds=0)
 
         assert len(result) == 1
         assert result[0]["full_text"] == ""
-        assert get.call_count == 2
+        assert get.call_count == 3
         assert "No HTML text available" in caplog.text
 
     def test_empty_conversion_recovers_on_retry(self):
@@ -90,10 +91,54 @@ class TestDownloadFullTextMain:
             "echr_extractor.ECHR_html_downloader.requests.get",
             side_effect=responses,
         ):
-            result = download_full_text_main(df, threads=1)
+            result = download_full_text_main(df, threads=1, retry_backoff_seconds=0)
 
         assert len(result) == 1
         assert result[0]["full_text"] == "Available on retry"
+
+    def test_502_retries_with_exponential_backoff(self):
+        df = pd.DataFrame({"itemid": ["001-1"], "ecli": ["ECLI:1"]})
+        responses = [
+            fake_html_response(502),
+            fake_html_response(502),
+            fake_html_response(200, "<p>Recovered after gateway errors</p>"),
+        ]
+
+        with patch(
+            "echr_extractor.ECHR_html_downloader.requests.get",
+            side_effect=responses,
+        ) as get, patch("echr_extractor.ECHR_html_downloader.time.sleep") as sleep:
+            result = download_full_text_main(
+                df,
+                threads=1,
+                retry_attempts=3,
+                retry_backoff_seconds=2,
+            )
+
+        assert result[0]["full_text"] == "Recovered after gateway errors"
+        assert get.call_count == 3
+        assert [call.args[0] for call in sleep.call_args_list] == [2, 4]
+
+    def test_cloudflare_521_is_also_treated_as_transient(self):
+        df = pd.DataFrame({"itemid": ["001-1"], "ecli": ["ECLI:1"]})
+        responses = [
+            fake_html_response(521),
+            fake_html_response(200, "<p>Recovered after origin outage</p>"),
+        ]
+
+        with patch(
+            "echr_extractor.ECHR_html_downloader.requests.get",
+            side_effect=responses,
+        ) as get:
+            result = download_full_text_main(
+                df,
+                threads=1,
+                retry_attempts=2,
+                retry_backoff_seconds=0,
+            )
+
+        assert result[0]["full_text"] == "Recovered after origin outage"
+        assert get.call_count == 2
 
 
 def test_get_full_text_preserves_paragraphs_and_commas():
