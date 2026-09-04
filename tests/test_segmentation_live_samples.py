@@ -8,9 +8,14 @@ import pytest
 
 from echr_extractor.ECHR_text_segmenter import SECTION_NAMES, segment_echr_texts
 
-
 FIXTURE_DIR = Path(__file__).parent / "fixtures" / "segmentation_live_samples"
-MANIFEST = json.loads((FIXTURE_DIR / "manifest.json").read_text(encoding="utf-8"))
+MANIFEST_PATH = FIXTURE_DIR / "manifest.json"
+if not MANIFEST_PATH.exists():
+    pytest.skip(
+        "optional live-sample manifest is not included in the repository",
+        allow_module_level=True,
+    )
+MANIFEST = json.loads(MANIFEST_PATH.read_text(encoding="utf-8"))
 
 
 @pytest.mark.parametrize(
