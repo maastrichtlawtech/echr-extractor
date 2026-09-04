@@ -2,14 +2,28 @@ import logging
 import math
 import re
 import threading
+import time
 
 import requests
 from bs4 import BeautifulSoup
 
 base_url = "https://hudoc.echr.coe.int/app/conversion/docx/html/body?library=ECHR&id="
 DEFAULT_TIMEOUT_SECONDS = 75
-DEFAULT_RETRY_ATTEMPTS = 2
+DEFAULT_RETRY_ATTEMPTS = 3
 DEFAULT_MAX_WORKERS = 4
+DEFAULT_RETRY_BACKOFF_SECONDS = 2
+MAX_RETRY_BACKOFF_SECONDS = 30
+RETRYABLE_STATUS_CODES = frozenset(
+    {408, 425, 429, 500, 502, 503, 504, 520, 521, 522, 523, 524}
+)
+
+
+def _retry_delay(attempt, backoff_seconds):
+    """Return the bounded exponential delay before the next attempt."""
+    return min(
+        max(0, float(backoff_seconds)) * (2 ** max(0, attempt - 1)),
+        MAX_RETRY_BACKOFF_SECONDS,
+    )
 
 
 def get_full_text_from_html(html_text):
@@ -67,9 +81,25 @@ def download_full_text_main(
     threads,
     timeout=DEFAULT_TIMEOUT_SECONDS,
     retry_attempts=DEFAULT_RETRY_ATTEMPTS,
+    retry_backoff_seconds=DEFAULT_RETRY_BACKOFF_SECONDS,
 ):
-    item_ids = df["itemid"]
-    eclis = df["ecli"]
+    download_df = df
+    if "isplaceholder" in df.columns:
+        placeholder_values = (
+            df["isplaceholder"].fillna(False).astype(str).str.strip().str.lower()
+        )
+        is_placeholder = placeholder_values.isin({"1", "true", "yes"})
+        skipped = int(is_placeholder.sum())
+        if skipped:
+            logging.info(
+                "Skipping %s HUDOC language-placeholder record(s); these "
+                "records intentionally have no full-text conversion",
+                skipped,
+            )
+        download_df = df.loc[~is_placeholder]
+
+    item_ids = download_df["itemid"].reset_index(drop=True)
+    eclis = download_df["ecli"].reset_index(drop=True)
     length = item_ids.size
     if length == 0:
         return []
@@ -82,7 +112,14 @@ def download_full_text_main(
         curr_ecli = eclis[i : (i + at_once_threads)]
         t = threading.Thread(
             target=download_full_text_separate,
-            args=(curr_ids, curr_ecli, all_dict, timeout, retry_attempts),
+            args=(
+                curr_ids,
+                curr_ecli,
+                all_dict,
+                timeout,
+                retry_attempts,
+                retry_backoff_seconds,
+            ),
         )
         threads.append(t)
     for t in threads:
@@ -103,9 +140,11 @@ def download_full_text_separate(
     dict_list,
     timeout=DEFAULT_TIMEOUT_SECONDS,
     retry_attempts=DEFAULT_RETRY_ATTEMPTS,
+    retry_backoff_seconds=DEFAULT_RETRY_BACKOFF_SECONDS,
 ):
     full_list = []
     empty_by_id = {}
+    permanent_failed_ids = set()
     eclis = eclis.reset_index(drop=True)
     item_ids = item_ids.reset_index(drop=True)
 
@@ -136,19 +175,74 @@ def download_full_text_separate(
                     empty_by_id[item_id] = json_dict
                     retry_ids.append(item_id)
                     retry_eclis.append(ecli)
-            except Exception:
+            except requests.exceptions.HTTPError:
                 empty_by_id.pop(item_id, None)
+                status_code = getattr(r, "status_code", None)
+                if status_code in RETRYABLE_STATUS_CODES:
+                    logging.warning(
+                        "HUDOC full-text request for %s returned transient "
+                        "HTTP %s; scheduling a retry",
+                        item_id,
+                        status_code,
+                    )
+                    retry_ids.append(item_id)
+                    retry_eclis.append(ecli)
+                else:
+                    permanent_failed_ids.add(item_id)
+                    logging.warning(
+                        "HUDOC full-text request for %s returned non-retryable "
+                        "HTTP %s",
+                        item_id,
+                        status_code,
+                    )
+            except (
+                requests.exceptions.Timeout,
+                requests.exceptions.ConnectionError,
+            ) as error:
+                empty_by_id.pop(item_id, None)
+                logging.warning(
+                    "HUDOC full-text request for %s failed with %s; "
+                    "scheduling a retry",
+                    item_id,
+                    type(error).__name__,
+                )
+                retry_ids.append(item_id)
+                retry_eclis.append(ecli)
+            except requests.exceptions.RequestException as error:
+                empty_by_id.pop(item_id, None)
+                logging.warning(
+                    "HUDOC full-text request for %s failed with %s; "
+                    "scheduling a retry",
+                    item_id,
+                    type(error).__name__,
+                )
                 retry_ids.append(item_id)
                 retry_eclis.append(ecli)
         return retry_ids, retry_eclis
 
     retry_ids, retry_eclis = item_ids, eclis
-    for _ in range(max(1, int(retry_attempts))):
+    attempts = max(1, int(retry_attempts))
+    for attempt in range(1, attempts + 1):
         retry_ids, retry_eclis = download_html(retry_ids, retry_eclis)
         if not retry_ids:
             break
+        if attempt < attempts:
+            delay = _retry_delay(attempt, retry_backoff_seconds)
+            logging.info(
+                "Retrying %s HUDOC full-text request(s) in %.1f seconds "
+                "(attempt %s/%s)",
+                len(retry_ids),
+                delay,
+                attempt + 1,
+                attempts,
+            )
+            if delay:
+                time.sleep(delay)
     empty_ids = [item_id for item_id in retry_ids if item_id in empty_by_id]
-    failed_ids = [item_id for item_id in retry_ids if item_id not in empty_by_id]
+    failed_ids = sorted(
+        permanent_failed_ids
+        | {item_id for item_id in retry_ids if item_id not in empty_by_id}
+    )
     if failed_ids:
         logging.warning(
             f"Full text could not be downloaded for {len(failed_ids)} "

@@ -384,6 +384,7 @@ def get_echr_metadata(
     if not fields:
         fields = [
             "itemid",
+            "application",
             "applicability",
             "appno",
             "article",
@@ -393,6 +394,7 @@ def get_echr_metadata(
             "doctypebranch",
             "ecli",
             "importance",
+            "isplaceholder",
             "judgementdate",
             "languageisocode",
             "originatingbody",
