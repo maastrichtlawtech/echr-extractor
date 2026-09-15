@@ -7,6 +7,8 @@ import time
 import requests
 from bs4 import BeautifulSoup
 
+from ._http import HUDOC_REQUEST_HEADERS
+
 base_url = "https://hudoc.echr.coe.int/app/conversion/docx/html/body?library=ECHR&id="
 DEFAULT_TIMEOUT_SECONDS = 75
 DEFAULT_RETRY_ATTEMPTS = 3
@@ -155,7 +157,11 @@ def download_full_text_separate(
             item_id = item_ids[i]
             ecli = eclis[i]
             try:
-                r = requests.get(base_url + item_id, timeout=timeout)
+                r = requests.get(
+                    base_url + item_id,
+                    timeout=timeout,
+                    headers=HUDOC_REQUEST_HEADERS,
+                )
                 # An error page must not be stored as the document text
                 r.raise_for_status()
                 full_text = get_full_text_from_html(r.text)

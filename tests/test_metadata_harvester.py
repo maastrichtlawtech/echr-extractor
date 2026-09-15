@@ -19,6 +19,7 @@ from echr_extractor.ECHR_metadata_harvester import (
     link_to_query,
     split_date_range,
 )
+from echr_extractor._http import HUDOC_REQUEST_HEADERS
 
 
 def hudoc_link(fragment):
@@ -248,10 +249,14 @@ class TestGetEchrMetadata:
     def test_returns_dataframe_with_records(self):
         records = [make_record(i) for i in range(3)]
         responses = [fake_response(3, []), fake_response(3, records)]
-        df, _ = self.run(responses)
+        df, get = self.run(responses)
         assert isinstance(df, pd.DataFrame)
         assert len(df) == 3
         assert list(df["itemid"]) == ["001-0", "001-1", "001-2"]
+        assert all(
+            call.kwargs["headers"] == HUDOC_REQUEST_HEADERS
+            for call in get.call_args_list
+        )
 
     def test_returns_false_when_no_results(self):
         df, _ = self.run([fake_response(0, [])])

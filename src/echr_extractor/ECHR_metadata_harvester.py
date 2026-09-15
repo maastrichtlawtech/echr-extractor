@@ -8,6 +8,8 @@ import urllib.parse
 import gc
 from tqdm import tqdm
 
+from ._http import HUDOC_REQUEST_HEADERS
+
 
 def get_r(url, timeout, retry, verbose, max_attempts=20):
     """
@@ -25,7 +27,7 @@ def get_r(url, timeout, retry, verbose, max_attempts=20):
 
     while count < max_attempts:
         try:
-            r = requests.get(url, timeout=timeout)
+            r = requests.get(url, timeout=timeout, headers=HUDOC_REQUEST_HEADERS)
             r.raise_for_status()  # Raise an exception for bad status codes
             return r
         except (

@@ -54,7 +54,7 @@ class TestDownloadFullTextMain:
             ],
         }
 
-        def fake_get(url, timeout):
+        def fake_get(url, timeout, **kwargs):
             item_id = url.rsplit("=", 1)[-1]
             return responses[item_id].pop(0)
 
