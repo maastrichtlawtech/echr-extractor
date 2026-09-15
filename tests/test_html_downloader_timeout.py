@@ -3,6 +3,7 @@ from unittest.mock import MagicMock, patch
 import pandas as pd
 
 from echr_extractor.ECHR_html_downloader import download_full_text_main
+from echr_extractor._http import HUDOC_REQUEST_HEADERS
 
 
 def test_configured_timeout_is_passed_to_requests():
@@ -20,6 +21,7 @@ def test_configured_timeout_is_passed_to_requests():
     get.assert_called_once_with(
         "https://hudoc.echr.coe.int/app/conversion/docx/html/body?library=ECHR&id=001-1",
         timeout=91,
+        headers=HUDOC_REQUEST_HEADERS,
     )
 
 
